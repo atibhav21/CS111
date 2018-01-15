@@ -1,0 +1,32 @@
+NAME: Atibhav Mittal
+EMAIL: atibhav.mittal6@gmail.com
+ID: 804598987
+
+The included files in the tarball are:
+lab0.c - The source file that copies data from stdin to stdout
+		 It works with other options like --input, --output, --segfault 
+		 and --catch
+Makefile - The makefile for building the source file, and running smoke tests.
+			It also supports clean, and dist to clean the directory and build
+			a distributable tarball.
+backtrace.png - Screenshot showing the stack trace after a segmentation fault
+breakpoint.png - Screenshot showing that execution paused before the fault, 
+				and inspection of the pointer.
+README - file describing the contents of the tarball
+
+Smoke Test Cases:
+The make check command runs five smoke tests. The purpose of each of these is
+described below:
+1. First test checks the functionality of the program when both an input and 
+	output file are provided
+2. Checks the functionality when only the output file is provided, and input
+	is read from stdin
+3. Checks the functionality when only an input file is provided and output
+	is sent to stdout
+4. Checks that the program exits correctly (with the correct return code) 
+	when the input file cannot be opened
+5. Checks if the --segfault option and the --catch option work correctly
+
+Online Sources Used:
+I used the following source to help me write the makefile:
+http://www.cs.colby.edu/maxwell/courses/tutorials/maketutor/ 

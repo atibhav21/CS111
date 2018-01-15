@@ -1,3 +1,9 @@
+/*
+NAME: Atibhav Mittal
+EMAIL: atibhav.mittal6@gmail.com
+ID: 804598987
+*/
+
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +17,7 @@
 #define STDOUT_FILEDES 1
 
 extern int errno ;
+extern char* optarg;
 
 void on_segfault(int x)
 {
@@ -21,21 +28,21 @@ void on_segfault(int x)
 void create_segfault()
 {
 	char* temp = NULL;
-	*temp = 'a';
+	*temp = 'a'; // dereferencing a null pointer should cause a segfault
 }
 
 void doFileRedirection(int input_filedes, int output_filedes)
 {
 	char ch;
-	while(read(input_filedes, &ch, 1) != 0) {
-		write(output_filedes, &ch, 1);
+	while(read(input_filedes, &ch, 1) != 0) { // repeat until EOF is encountered 
+		write(output_filedes, &ch, 1); // write to the output whatever is being read as input
 	}
 }
 
 void printCorrectUsage()
 {
 	printf("usage: lab0 [options]\n");
-	printf("options: --input=file1, Read from file1, --output=file2, Read from file2, --segfault Create a segfault, --catch Handle segfault\n");
+	printf("options: --input=file1, Read from file1, --output=file2, Write to file2, --segfault Create a segfault, --catch Handle segfault\n");
 }
 
 int main(int argc, char *argv[])
@@ -55,8 +62,8 @@ int main(int argc, char *argv[])
 	
 	int segfault_needed = 0; // booleans to check if option is inputted to program or not
 	int segfault_handler = 0;
-	char* input_filename;
-	char* output_filename;
+	char* input_filename = NULL;
+	char* output_filename = NULL;
 	while(c != -1)
 	{	
 
@@ -90,15 +97,29 @@ int main(int argc, char *argv[])
 		int o_filedes = open(output_filename, O_CREAT | O_WRONLY, S_IRWXU); // create the output file specified with read, write, execute user permissions
 		if(o_filedes < 0) {
 			// error in opening the file
-			// TODO: ADD additional information
+			fprintf( stderr, "--output caused the error\n");
+			fprintf( stderr, "could not create file: %s\n", output_filename);
 			fprintf( stderr, "Failed to create output file: %s\n", strerror(errno) );
 			exit(3);
 		}
 		else if(o_filedes > 0) {
 			// no error, so redirect stdout to output file
-			close(1);
-			dup(o_filedes);
-			close(o_filedes);
+			if(close(1) < 0) 
+			{
+				fprintf(stderr, "Error closing stdout: %s\n", strerror(errno));
+				exit(3);
+			}
+			if(dup(o_filedes) < 0)
+			{
+				fprintf(stderr, "Error duplicating file descriptor: %s\n", strerror(errno));
+				exit(3);
+			}
+			
+			if(close(o_filedes) < 0)
+			{
+				fprintf(stderr, "Error closing file descriptor for output file: %s\n", strerror(errno));
+				exit(3);
+			}
 		}
 		
 	}
@@ -107,15 +128,27 @@ int main(int argc, char *argv[])
 		int i_filedes = open(input_filename, O_RDONLY); // open a filedescriptor to the required input file
 		if(i_filedes < 0) {
 			// error in opening the file
-			// TODO: Add additional debugging information
+			fprintf(stderr, "--input caused the error, file:%s\n", input_filename);
 			fprintf(stderr, "Failed to open input file: %s\n", strerror(errno));
 			exit(2);
 		}
 		else if(i_filedes > 0) {
 			// no error so redirect stdin to input file
-			close(0);
-			dup(i_filedes);
-			close(i_filedes);
+			if(close(0) < 0)
+			{
+				fprintf(stderr, "Error closing stdin: %s\n", strerror(errno));
+				exit(2);
+			}
+			if(dup(i_filedes) < 0)
+			{
+				fprintf(stderr, "Error duplicating file descriptor: %s\n", strerror(errno));
+				exit(2);
+			}
+			if(close(i_filedes) < 0)
+			{
+				fprintf(stderr, "Error closing file descriptor for input file: %s\n", strerror(errno));
+				exit(2);
+			}
 		}
 	}
 
@@ -127,11 +160,6 @@ int main(int argc, char *argv[])
 		// create a segfault since the user specified this option
 		create_segfault();
 	}
-	/*else if(segfault_needed && segfault_handler) {
-		// handle the segfault
-		// TODO: Figure out how segfault handlers work
-		printf("Handle this segfault baby\n");
-	}*/
 	else {
 		// no error so do the file redirection from stdin to stdout
 		doFileRedirection(STDIN_FILEDES, STDOUT_FILEDES);
