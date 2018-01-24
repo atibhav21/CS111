@@ -1,0 +1,323 @@
+56,57c41
+< 				close(fd_to_shell);
+< 				//return 1;
+q---
+> 				return 1;
+99c83
+< 			if(buffer[i] == 4)
+---
+> 			/*if(buffer[i] == 4)
+101,105c85,86
+< 				// EOF file received
+< 				//write(1, "End of File received\n", 20);
+< 				//write(1, "\r\n", 2);
+< 				fprintf(stderr, "Enf of File received\r\n");
+< 			}
+---
+> 				write(1, "\r\n", 2);
+> 			}*/ 
+122c103
+< int performIO(int shell_active, int fd_to_shell, int fd_from_shell, int child_id)
+---
+> int performIO(int shell_active, int fd_to_shell, int fd_from_shell)
+140c121
+< 	while(eof_received == 0) 
+---
+> 	while(eof_received == FALSE) 
+148c129
+< 				eof_received = processInputs(shell_active, fd_to_shell, buff, num_read, TRUE, child_id);
+---
+> 				eof_received = processInputs(shell_active, fd_to_shell, buff, num_read, TRUE);
+150c131
+< 			else if(two_inputs[0].revents & POLLHUP)
+---
+> 			else if((two_inputs[0].revents & (POLLHUP | POLLERR)))
+153,160d133
+< 				// TODO!!
+< 				fprintf(stderr, "Something received in first event\r\n");
+< 				break;
+< 			}
+< 			else if(two_inputs[0].revents & POLLERR)
+< 			{
+< 				fprintf(stderr, "Something error occured during polling: %s\r\n", strerror(errno));
+< 				eof_received = -1;
+166c139
+< 				eof_received = processInputs(shell_active, fd_to_shell, buff_shell, num_read, FALSE, child_id);
+---
+> 				eof_received = processInputs(shell_active, fd_to_shell, buff_shell, num_read, FALSE);
+168c141
+< 			else if(shell_active && (two_inputs[1].revents & POLLHUP))
+---
+> 			else if(shell_active && (two_inputs[1].revents & (POLLHUP | POLLERR)) )
+170,194c143,175
+< 				signal(SIGPIPE, SIG_IGN);
+< 				// received eof from the shell
+< 				// close write pipes from shell back to main lab1a executable
+< 				//close()
+< 				int num_read;
+< 				// keep doing a read  until it returns 0, since hangup has occured, after receiving 0, 
+< 				// use wait pid to get shell's exit status and report it to stderr
+< 				// TODO: Uncomment
+< 				while((num_read = read(fd_from_shell, buff_shell, 256)) != 0)
+< 				{
+< 					if(num_read == -1 || processInputs(shell_active, fd_to_shell, buff_shell, num_read, FALSE, child_id) == -1)
+< 					{
+< 						fprintf(stderr, "Some error occured during read/write from shell%s\n", strerror(errno));
+< 						eof_received = -1; // error!!
+< 					}
+< 				}
+< 
+< 				int shell_status;
+< 				if(waitpid(child_id, &shell_status, 0) == -1)
+< 				{
+< 					// error
+< 					fprintf(stderr, "Error occured while exiting shell\n");
+< 					eof_received = -1;
+< 				}
+< 				else
+---
+> 				// received error from the shell
+> 			}
+> 		}
+> 		else
+> 		{
+> 			continue;
+> 		}
+> 		/*int num_read = read(0, buff, 10);
+> 		
+> 		int i;
+> 		if(shell_active)
+> 		{
+> 			// reads the output of the shell 
+> 			int num_read_shell = read(fd_from_shell, buff_shell, 256);
+> 			for(i = 0; i < num_read_shell; i+= 1)
+> 			{
+> 				// TODO: More iterative processing of the buffer
+> 				write(1, &buff_shell, num_read_shell);
+> 			}
+> 		}
+> 			
+> 		for(i = 0; i < num_read; i += 1)
+> 		{
+> 			if(buff[i] == 4) // ^D ASCII representation is 4, so if it is received break out of input loop
+> 			{
+> 				eof_received = 1;
+> 				break;
+> 			}
+> 			if( (i+1) < num_read && buff[i] == '\r' && buff[i+1] == '\n')
+> 			{
+> 				write(1, "\r\n", 2);
+> 				i = i + 1;
+> 				if(shell_active)
+196,198c177
+< 					// successfully finished reading all of the shell's output
+< 					fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\r\n", (shell_status & 0x007f), (shell_status & 0xff00));
+< 					eof_received = 1;
+---
+> 					write(fd_to_shell, "\n", 1);
+200,202d178
+< 				
+< 				//fprintf(stderr, "Something received in second event\r\n" );
+< 				break;
+204c180,181
+< 			else if(shell_active && (two_inputs[1].revents & POLLERR))
+---
+> 			// TODO: check if '\r\n' before checking for either character otherwise there will be double processing of some characters!!
+> 			if(buff[i] == '\n' || buff[i] == '\r') 
+206,208c183,184
+< 
+< 				int shell_status;
+< 				if(waitpid(child_id, &shell_status, 0) == -1)
+---
+> 				write(1, "\r\n", 2);
+> 				if(shell_active)
+210,212c186
+< 					// error
+< 					fprintf(stderr, "Error occured while exiting shell\r\n");
+< 					eof_received = -1;
+---
+> 					write(fd_to_shell, "\n", 1);
+214c188,192
+< 				else
+---
+> 			}
+> 			else
+> 			{
+> 				write(1, &buff[i], 1);
+> 				if(shell_active)
+216,218c194
+< 					// successfully finished reading all of the shell's output
+< 					fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\r\n", (shell_status & 0x007f), (shell_status & 0xff00));
+< 					eof_received = 1;
+---
+> 					write(fd_to_shell, &buff[i], 1);
+221,225c197,198
+< 		}
+< 		else
+< 		{
+< 			continue;
+< 		}
+---
+> 		}*/
+> 		//write(1, buff, num_read);
+229d201
+< 		// error exit
+239,245d210
+< void exitError(struct termios* old_settings_pointer, char* message)
+< {
+< 	fprintf(stderr, "%s: %s\r\n", message, strerror(errno) );
+< 	tcsetattr(1, TCSANOW, old_settings_pointer);
+< 	exit(1);
+< }
+< 
+260c225
+< 					//{"debug", no_argument, 0, 'd'},
+---
+> 					{"debug", no_argument, 0, 'd'},
+280a246,247
+> 	
+> 
+287,288c254,255
+< 			/*case 'd': debug_enabled = TRUE;
+< 					  break;*/
+---
+> 			case 'd': debug_enabled = TRUE;
+> 					  break;
+290,292c257,259
+< 				fprintf(stderr, "Usage: ./lab1a [--shell]\r\n");
+< 				exitError(&old_settings, "Incorrect Option Passed, Exiting program now...");
+< 				break; // Will never reach this point
+---
+> 				printf("Incorrect Option Passed, Exiting program now...\n");
+> 				tcsetattr(1, TCSANOW, &old_settings); // reset to old settings
+> 				exit(1);
+299,300c266,267
+< 	* parent_to_child is the pipe that takes data from user process and sends it to the shell
+< 	* child_to_parent is the pipe that sends the output of the shell execution to the parent(lab1a) process
+---
+> 	* parent_to_child[0] -> parent_to_child[1] is the pipe that takes data from user process and sends it to the shell
+> 	* child_to_parent[0] -> child_to_parent[1] is the process that sends the output of the shell execution to the parent(lab1a.c) process
+306c273,275
+< 			exitError(&old_settings, "Could not create pipe");
+---
+> 			printf("Could not create pipe: %s. Exiting now...\n", strerror(errno));
+> 			tcsetattr(1, TCSANOW, &old_settings); // reset to old settingss
+> 			exit(1);
+310,314c279,292
+< 			exitError(&old_settings, "Could not create pipe");
+< 		}
+< 
+< 		int child_id = fork();
+< 		if(child_id < 0)
+---
+> 			printf("Could not create pipe: %s. Exiting now...\n", strerror(errno));
+> 			tcsetattr(1, TCSANOW, &old_settings); // reset to old settings
+> 			exit(1);
+> 		}
+> 		/*if(debug_enabled)
+> 		{
+> 			fprintf(stderr, "Created pipe. Write End FD:%d, Read End FD:%d\n", parent_to_child[0], parent_to_child[1]);
+> 			fprintf(stderr, "Created pipe. Write End FD:%d, Read End FD:%d\n", child_to_parent[0], child_to_parent[1]);
+> 		}*/
+> 	/*}
+> 	if(in_shell_mode)
+> 	{*/
+> 		int rc = fork();
+> 		if(rc < 0)
+316c294,296
+< 			exitError(&old_settings, "Fork failed");
+---
+> 			fprintf(stderr, "Fork failed\n");
+> 			tcsetattr(1, TCSANOW, &old_settings); // reset to old settings
+> 			exit(1);
+318c298
+< 		else if(child_id == 0)
+---
+> 		else if(rc == 0)
+319a300
+> 			//TODO: FIX THIS SHIT, doesn't do file redirection at any point!! (Probably)
+321a303
+> 			//fprintf(stderr, "Child Process created with pid: %d\n", getpid()); // Need to use \n to flush the output buffer
+323,340c305,331
+< 			if(close(child_to_parent[0]) != 0 ||  // close read end of the pipe from child to parent in the child process
+< 						close(parent_to_child[1])) { // close write end of the pipe from parent to child in the child process
+< 				exitError(&old_settings, "Error in Closing the pipe");
+< 			}
+< 			if(close(0) != 0 || dup(parent_to_child[0]) == -1 || close(parent_to_child[0]) != 0) // close stdin and duplicate it
+< 			{
+< 				exitError(&old_settings, "Error in Duplicating pipe");
+< 			}
+< 
+< 			if(close(1) != 0 || dup(child_to_parent[1]) == -1) // redirect stdout
+< 			{
+< 				exitError(&old_settings, "Error in Duplicating pipe");
+< 			}
+< 
+< 			if(close(2) != 0 || dup(child_to_parent[1]) == -1  || close(child_to_parent[1]) != 0)
+< 			{
+< 				exitError(&old_settings, "Error in Duplicating pipe");
+< 			}
+---
+> 			//close(0); // close stdin 
+> 			close(parent_to_child[1]);
+> 			if(close(0) != 0 || dup(parent_to_child[0]) != 0 || close(parent_to_child[0]) != 0)
+> 			{
+> 				fprintf(stderr, "Error in Duplicating pipe: %s\n", strerror(errno));
+> 				tcsetattr(1, TCSANOW, &old_settings);
+> 				exit(1);
+> 			} // 
+> 			
+> 			//Need to redirect stdout, stderr of child process back to parents stdin
+> 			close(child_to_parent[0]); // close read end
+> 
+> 			close(1); // Close stdout
+> 			dup(child_to_parent[1]);
+> 
+> 			close(2); // close stderr
+> 			dup(child_to_parent[1]);
+> 			//close(child_to_parent[1]);
+> 
+> 			
+> 			/*int fd = open("abc.txt", O_CREAT | O_WRONLY | O_APPEND, S_IRWXU);
+> 			if(fd >= 0)
+> 			{
+> 				close(1);
+> 				dup(fd);
+> 				close(fd);
+> 			}*/
+348c339,341
+< 				exitError(&old_settings, "Could not execute Shell");
+---
+> 				fprintf(stderr, "Could not execute Shell: %s\n", strerror(errno));
+> 				tcsetattr(1, TCSANOW, &old_settings); // reset to old settings
+> 				exit(1);
+354,356c347
+< 			// close read end of parent_to_child descriptor
+< 			// close write end of child_to_parent descriptor
+< 			if(close(parent_to_child[0]) != 0 || close(child_to_parent[1]) != 0)
+---
+> 			if(performIO(TRUE, parent_to_child[1], child_to_parent[0]) != 0)
+358,363c349,350
+< 				exitError(&old_settings, "Error occured while closing pipe ends");
+< 			}
+< 
+< 			if(performIO(TRUE, parent_to_child[1], child_to_parent[0], child_id) != 0)
+< 			{
+< 				exitError(&old_settings, "Error while processing inputs");
+---
+> 				tcsetattr(1, TCSANOW, &old_settings);
+> 				exit(1);
+366a354
+> 	
+370c358
+< 		if(performIO(FALSE, parent_to_child[1], child_to_parent[0], -1) != 0)
+---
+> 		if(performIO(FALSE, parent_to_child[1], child_to_parent[0]) != 0)
+372c360,361
+< 			exitError(&old_settings, "Could not process input correctly. Exiting...");
+---
+> 			tcsetattr(1, TCSANOW, &old_settings);
+> 			exit(1);
+374a364,365
+> 
+> 
