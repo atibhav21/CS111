@@ -177,7 +177,7 @@ downLoad $PTY_TEST $LIBRARY_URL "c" "-lpthread"
 #
 # exercise keyboard to stdout processing
 #
-./$PTY_TEST --modes ./$PGM 2> STDERR <<-EOF
+./$PTY_TEST --modes ./$PGM > STDOUT 2> STDERR <<-EOF
 	PAUSE 1
 	MODES DURING
 	SEND "^D"

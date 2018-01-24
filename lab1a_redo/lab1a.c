@@ -189,39 +189,7 @@ void performIO(int shell_active, int fd_to_shell, int fd_from_shell, int child_i
 			else if(shell_active && (two_inputs[1].revents & POLLHUP ))
 			{
 				// all file descriptors to the shell have been closed so exit after processing all read input fromt the shell
-				/*fprintf(stdout, "POLLHUP received\r\n");
-				int num_read;
-				while(1)
-				{
-					// read all remaining output from the shell
-					num_read = read(fd_from_shell, buff_shell, 256);
-					if(num_read == 0)
-					{
-						break;
-					}
-					else if(num_read == -1)
-					{
-						exitError(strerror(errno));
-					}
-					else
-					{
-						if(write(1, buff_shell, num_read) == -1)
-						{
-							exitError(strerror(errno));
-						}
-					}
-				}
-				int shell_status;
-				if(waitpid(child_id, &shell_status, 0) == -1)
-				{
-					// error
-					exitError(strerror(errno));
-				}
-				else
-				{
-					// successfully finished reading all of the shell's output
-					fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\r\n", (shell_status & 0x007f), (shell_status & 0xff00));
-				}*/
+				fprintf(stderr, "POLLHUP received\r\n");
 				break;
 			}
 			else if(shell_active && (two_inputs[1].revents & POLLERR))
@@ -241,7 +209,7 @@ void performIO(int shell_active, int fd_to_shell, int fd_from_shell, int child_i
 		}
 		//write(1, buff, num_read);
 	}
-
+	fprintf(stdout, "Point A reached\r\n");
 	int num_read;
 	while(1)
 	{
@@ -272,7 +240,7 @@ void performIO(int shell_active, int fd_to_shell, int fd_from_shell, int child_i
 	else
 	{
 		// successfully finished reading all of the shell's output
-		fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\r\n", (shell_status & 0x007f), (shell_status & 0xff00));
+		fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\r\n", (shell_status & 0x007f), ((shell_status & 0xff00) >> 8));
 	}
 }
 
