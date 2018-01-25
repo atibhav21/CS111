@@ -2,3 +2,9 @@ NAME: Atibhav Mittal
 EMAIL: atibhav.mittal6@gmail.com
 ID: 804598987
 
+The tarball contains three files:
+1. README: contains description of the tarball
+2. Makefile: Makefile for the source code, supports make, make clean and make dist
+3. lab1a.c: This file contains the source code for the project
+			The project involves creating and executing a child process (/bin/bash),
+			and working with the inputs and outputs from multiple processes.

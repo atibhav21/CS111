@@ -119,7 +119,7 @@ int processInputs(int shell_active, int fd_to_shell, char* buffer, int num_read,
 			}*/ 
 			if(buffer[i] == '\r' || buffer[i] == '\n')
 			{
-				if(write(1, "\r\n", 2) == -1) //TODO: Check if this needs to be changed to spaces or any other thing 
+				if(write(1, "\r\n", 2) == -1) 
 				{
 					exitError(strerror(errno));
 				}
