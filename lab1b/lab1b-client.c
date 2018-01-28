@@ -10,6 +10,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <poll.h>
 
 extern int errno;
 extern char* optarg;
@@ -38,7 +43,7 @@ void printErrorAndReset(char *message)
 
 void printUsageMessage()
 {
-	fprintf(stderr, "usage: ./lab1b --port=num --log=filename --compress\n");
+	fprintf(stderr, "usage: ./lab1b --port=num [--log=filename] [--compress]\n");
 }
 
 void setTerminalSettings(struct termios* settings)
@@ -54,11 +59,67 @@ void setTerminalSettings(struct termios* settings)
 
 }
 
-void processInput(int port_num, int log_fd)
+void setUpSocket(int* sockfd, int port_num)
+{
+	struct sockaddr_in serv_addr;
+	struct hostent* server;
+	//int n;
+
+	*sockfd = socket(AF_LOCAL, SOCK_STREAM, 0);
+	if(*sockfd < 0)
+	{
+		printErrorAndReset(strcat("Error while setting up socket: ", strerror(errno)));
+	}
+	server = gethostbyname("localhost"); // TODO: COMPLETE
+	if(server == NULL)
+	{
+		printErrorAndReset("Could not connect to localhost");
+	}
+	memset((char *)& serv_addr, 0, sizeof(serv_addr));
+	serv_addr.sin_family = AF_LOCAL;
+	memcpy((char *) server->h_addr, (char*)&serv_addr.sin_addr.s_addr, server->h_length);
+	serv_addr.sin_port = htons(port_num);
+
+	if(connect(*sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+		printErrorAndReset(strcat("Error connecting to server: ", strerror(errno)));
+	}
+
+
+}
+
+void perform_writes(int log_specified, int log_fd, int sock_fd, char* buff, int num_bytes)
+{
+	if(write(STDOUT_FILENO, &buff[0], num_bytes) == -1)
+	{
+		printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+	}
+	if(log_specified && write(log_fd, &buff[0], num_bytes) == -1)
+	{
+		printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
+	}
+	if(write(sock_fd, &buff[0], num_bytes) == -1)
+	{
+		printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+	}
+}
+
+void processInput(int port_num, int log_specified, int log_fd)
 {
 	char buff[10];
 	int num_read;
 	int eof_received = FALSE; // TODO: remove
+	int sock_fd;
+
+	struct pollfd input_sources[2]; // input_sources[0] is the keyboard, input_sources[1] is the socket fd
+
+	setUpSocket(&sock_fd, port_num);
+
+	input_sources[0].fd = STDIN_FILENO;
+	input_sources[0].events = POLLIN | POLLHUP | POLLERR;
+
+	input_sources[1].fd = sock_fd;
+	input_sources[1].events = POLLIN | POLLHUP | POLLERR;
+
 	while(! eof_received)
 	{
 		if((num_read = read(STDIN_FILENO, &buff, 10)) == -1)
@@ -76,17 +137,35 @@ void processInput(int port_num, int log_fd)
 			}
 			else if(buff[i] == '\r' || buff[i] == '\n')
 			{
-				if(write(STDOUT_FILENO, "\r\n", 2) == -1 || write(log_fd, "\r\n", 2) == -1)
+				perform_writes(log_specified, log_fd, sock_fd, "\r\n", 2);
+				/*if(write(STDOUT_FILENO, "\r\n", 2) == -1) 
 				{
 					printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
 				}
+				if(log_specified && write(log_fd, "\r\n", 2) == -1)
+				{	
+					printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
+				}
+				if(write(sock_fd, "\r\n", 2) == -1)
+				{
+					printErrorAndReset(strcat("Error while trying to write to socket: ", strerror(errno)));
+				}*/
 			}
 			else
 			{
-				if(write(STDOUT_FILENO, &buff[i], 1) == -1 || write(log_fd, &buff[i], 1) == -1)
+				perform_writes(log_specified, log_fd, sock_fd, &buff[i], 1);
+				/*if(write(STDOUT_FILENO, &buff[i], 1) == -1)
 				{
 					printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
 				}
+				if(log_specified && write(log_fd, &buff[i], 1) == -1)
+				{
+					printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
+				}
+				if(write(sock_fd, &buff[i], 1) == -1)
+				{
+					printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+				}*/
 			}
 		}
 	}
@@ -107,6 +186,8 @@ int main(int argc, char *argv[])
 	int option_index; 
 	char* log_filename;
 	int port_num;
+	int port_set = FALSE;
+	int log_specified = FALSE;
 	//int compress_mode = FALSE;
 	while(1)
 	{
@@ -120,8 +201,10 @@ int main(int argc, char *argv[])
 			switch(c)
 			{
 				case 'p': port_num = atoi(optarg);
+						  port_set = TRUE;
 							break;
-				case 'l': log_filename = optarg;
+				case 'l': log_specified = TRUE;
+							log_filename = optarg;
 							break;
 				/*case 'c': compress_mode = TRUE;
 							break;*/
@@ -132,6 +215,11 @@ int main(int argc, char *argv[])
 		}
 	}
 	// TODO: Check if preemptive exit if any argument is not passed!!
+	if(port_set == FALSE)
+	{
+		printUsageMessage();
+		exit(1);
+	}
 
 	if(tcgetattr(STDOUT_FILENO, &old_settings) == -1)
 	{
@@ -142,19 +230,21 @@ int main(int argc, char *argv[])
 	struct termios new_settings = old_settings;
 	setTerminalSettings(&new_settings); // set the terminal settings to non-canonical no-echo mode
 
-	// TODO: take in input
-	int log_fd = open(log_filename, O_CREAT | O_WRONLY| O_TRUNC, S_IRWXU);
+	int log_fd = -1;
 
-	fprintf(stdout, "reached this point\r\n");
-	if(log_fd == -1)
+	if(log_specified)
 	{
-		printErrorAndReset(strcat("Could not open logfile: ", strerror(errno)));
-	}
+		log_fd = open(log_filename, O_CREAT | O_WRONLY| O_TRUNC, S_IRWXU);
+		if(log_fd == -1)
+		{
+			printErrorAndReset(strcat("Could not open logfile: ", strerror(errno)));
+		}
+	} 
 
-	processInput(port_num, log_fd);
+	processInput(port_num, log_specified, log_fd);
 
 
-	if(close(log_fd) == -1)
+	if(log_specified && close(log_fd) == -1)
 	{
 		printErrorAndReset(strcat("Could not close logfile: ", strerror(errno)));
 	}
