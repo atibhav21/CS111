@@ -12,8 +12,10 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <signal.h>
 
 extern int errno;
 extern char* optarg;
@@ -50,14 +52,14 @@ void setupSocket(int* newsockfd, int port_num)
 	struct sockaddr_in serv_addr, cli_addr;
 	//int n;
 
-	sockfd = socket(AF_LOCAL, SOCK_STREAM, 0);
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if(sockfd < 0)
 		printError(strcat("Error while opening socket: ", strerror(errno)));
 
 	memset((char *) &serv_addr, 0,  sizeof(serv_addr)); // initialize to 0s
 
 
-	serv_addr.sin_family = AF_LOCAL;
+	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port = htons(port_num);
 	
@@ -96,6 +98,8 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 
 	int eof_received = FALSE;
 
+	//signal(SIGPIPE, SIG_IGN);
+
 	while(! eof_received)
 	{
 		int poll_rc = poll(input_sources, 2, 0);
@@ -110,16 +114,38 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 				num_read = read(newsockfd, &buff, 10);
 				if(num_read < 0)
 				{
-					printError(strcat("Error while reading from socket: ", strerror(errno)));
+					// Read error or EOF received from the network
+					/*close(write_to_bash_fd);
+					eof_received = TRUE;
+					break;*/
+					printError("Could not read from socket");
 				}
 				int i;
 				for(i = 0; i < num_read; i += 1)
 				{
-					if(buff[i] == 0x03 || buff[i] == 0x04) // ^C or ^D received TODO: CHANGE!!!!!!!!
+					if(buff[i] == 0x03 || buff[i] == 0x04) // ^C received TODO: CHANGE!!!!!!!!
 					{
 						eof_received = 1;
 						break;
+						/*if(kill(child_id, SIGINT) < 0)
+						{
+							printError(strcat("Error while sending SIGNINT to child: ", strerror(errno)));
+						}
+						//eof_received = 1;
+						if(write(write_to_bash_fd, &buff[i], 1) < 0)
+						{
+							printError(strcat("Error while writing to bash shell: ", strerror(errno)));
+						}*/
 					}
+					/*else if(buff[i] == 0x04) // ^D received
+					{
+						if(close(write_to_bash_fd) < 0)
+						{
+							printError(strcat("Error while trying to close fd: ", strerror(errno)));
+						}
+						eof_received = 1;
+						break;
+					}*/
 					else if(buff[i] == '\r' || buff[i]=='\n')
 					{
 						if(write(write_to_bash_fd, "\n", 1) == -1)
@@ -165,7 +191,7 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 			else if(input_sources[1].revents & POLLERR)
 			{
 				// error occured so just exit
-				printError("Poll Hangup/Error from socket");
+				printError("Poll Error from bash");
 				break;
 			}
 		}
@@ -175,23 +201,37 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 		}
 	}
 
+	// finish processing input from the shell
 	/*while(1)
 	{
-		num_read = read(newsockfd, &buff, BUFF_SIZE);
+		int num_read = read(read_from_bash_fd, &buff_shell, BUFF_SIZE);
 		if(num_read < 0)
 		{
-			printError(strcat("Error while trying to read", strerror(errno)));
+			printError(strcat("Error while trying to process bash input", strerror(errno)));
 		}
 		else if(num_read == 0)
 		{
-			//End of file received
 			break;
 		}
-		if(write(STDOUT_FILENO, &buff, num_read) < 0)
+		else
 		{
-			printError(strcat("Error while trying to write to stdout", strerror(errno)));
+			if(write(newsockfd, &buff_shell, num_read) < 0)
+			{
+				printError(strcat("Error while trying to write to socket: ", strerror(errno)));
+			}
 		}
+	}
 
+	int shell_status;
+	if(waitpid(child_id, &shell_status, 0) == -1)
+	{
+		// error
+		printError(strcat("Error occured while waiti shell", strerror(errno)));
+	}
+	else
+	{
+		// successfully finished reading all of the shell's output
+		fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\r\n", (shell_status & 0x007f), ((shell_status & 0xff00) >> 8));
 	}*/
 }
 

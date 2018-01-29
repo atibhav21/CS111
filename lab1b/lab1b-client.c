@@ -63,24 +63,26 @@ void setUpSocket(int* sockfd, int port_num)
 {
 	struct sockaddr_in serv_addr;
 	struct hostent* server;
-	//int n;
 
-	*sockfd = socket(AF_LOCAL, SOCK_STREAM, 0);
+	*sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if(*sockfd < 0)
 	{
 		printErrorAndReset(strcat("Error while setting up socket: ", strerror(errno)));
 	}
-	server = gethostbyname("localhost"); // TODO: COMPLETE
+	server = gethostbyname("localhost");
 	if(server == NULL)
 	{
 		printErrorAndReset("Could not connect to localhost");
 	}
 	memset((char *)& serv_addr, 0, sizeof(serv_addr));
-	serv_addr.sin_family = AF_LOCAL;
+	serv_addr.sin_family = AF_INET;
 	memcpy((char *) server->h_addr, (char*)&serv_addr.sin_addr.s_addr, server->h_length);
+
 	serv_addr.sin_port = htons(port_num);
 
-	if(connect(*sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+	
+	if(connect(*sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) // TODO: This is causing a segfault
+	{
 		printErrorAndReset(strcat("Error connecting to server: ", strerror(errno)));
 	}
 
@@ -194,7 +196,11 @@ void processInput(int port_num, int log_specified, int log_fd)
 
 	struct pollfd input_sources[2]; // input_sources[0] is the keyboard, input_sources[1] is the socket fd
 
+	
+
 	setUpSocket(&sock_fd, port_num);
+
+
 
 	input_sources[0].fd = STDIN_FILENO;
 	input_sources[0].events = POLLIN | POLLHUP | POLLERR;
@@ -290,9 +296,10 @@ int main(int argc, char *argv[])
 		}
 	} 
 
+
 	processInput(port_num, log_specified, log_fd);
 
-
+	
 	if(log_specified && close(log_fd) == -1)
 	{
 		printErrorAndReset(strcat("Could not close logfile: ", strerror(errno)));
