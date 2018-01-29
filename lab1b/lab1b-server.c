@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <poll.h>
 
 extern int errno;
 extern char* optarg;
@@ -25,6 +26,9 @@ extern char* optarg;
 #define FALSE 0
 
 #define BUFF_SIZE 256
+
+#define READ_END 0
+#define WRITE_END 1
 
 void printError(char *message)
 {
@@ -52,13 +56,16 @@ void setupSocket(int* newsockfd, int port_num)
 
 	memset((char *) &serv_addr, 0,  sizeof(serv_addr)); // initialize to 0s
 
+
 	serv_addr.sin_family = AF_LOCAL;
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port = htons(port_num);
-	if(bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+	
+	if(bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) // TODO: bind function creates junk files
 	{
 		printError(strcat("Error while trying to bind socket: ", strerror(errno)));
 	}
+	
 	if(listen(sockfd, 5) < 0)
 	{
 		printError(strcat("Error while trying to listen to socket", strerror(errno)));
@@ -73,11 +80,102 @@ void setupSocket(int* newsockfd, int port_num)
 }
 
 // newsockfd is the file descriptor for the socket
-void processInput(int newsockfd)
+void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, int child_id)
 {
-	char buff[BUFF_SIZE];
-	int num_read;
-	while(1)
+	char buff[10]; // TODO: Check if this needs to made larger for the compress option (to 1kb)?
+	char buff_shell[BUFF_SIZE];
+	//int num_read;
+
+	struct pollfd input_sources[2];
+
+	input_sources[0].fd = newsockfd;
+	input_sources[0].events = POLLIN | POLLHUP | POLLERR;
+
+	input_sources[1].fd = read_from_bash_fd;
+	input_sources[1].events = POLLIN | POLLHUP | POLLERR;
+
+	int eof_received = FALSE;
+
+	while(! eof_received)
+	{
+		int poll_rc = poll(input_sources, 2, 0);
+		if(poll_rc > 0)
+		{
+			// some kind of input received
+			if(input_sources[0].revents & POLLIN)
+			{
+				// input received from the client 
+				// forward it to shell
+				int num_read ;
+				num_read = read(newsockfd, &buff, 10);
+				if(num_read < 0)
+				{
+					printError(strcat("Error while reading from socket: ", strerror(errno)));
+				}
+				int i;
+				for(i = 0; i < num_read; i += 1)
+				{
+					if(buff[i] == 0x03 || buff[i] == 0x04) // ^C or ^D received TODO: CHANGE!!!!!!!!
+					{
+						eof_received = 1;
+						break;
+					}
+					else if(buff[i] == '\r' || buff[i]=='\n')
+					{
+						if(write(write_to_bash_fd, "\n", 1) == -1)
+						{
+							printError(strcat("Error while writing to the bash shell: ", strerror(errno)));
+						}
+					}
+					else
+					{
+						if(write(write_to_bash_fd, &buff[i], 1) == -1)
+						{
+							printError(strcat("Error while writing to the bash shell: ", strerror(errno)));
+						}
+					}
+				}
+			}
+			else if(input_sources[0].revents & (POLLHUP | POLLERR))
+			{
+				// some kind of error occured during input from the client
+				// TODO: Check if POLLHUP should also cause server to quit
+				printError("Poll Hangup/Error from socket");
+				break;
+			}
+			else if(input_sources[1].revents & POLLIN)
+			{
+				// input received from bash so forward it to the socket
+				int num_read = read(read_from_bash_fd, &buff_shell, BUFF_SIZE);
+				if(num_read < 0)
+				{
+					printError(strcat("Error while reading from shell: ", strerror(errno)));
+				}
+				if(write(newsockfd, &buff_shell, num_read) == -1)
+				{
+					printError(strcat("Error while writing to the socket: ", strerror(errno)));
+				}
+			}
+			else if(input_sources[1].revents & POLLHUP)
+			{
+				// POLLHUP received from shell
+				//printError("Poll Hangup/Error from socket");
+				break;
+			}
+			else if(input_sources[1].revents & POLLERR)
+			{
+				// error occured so just exit
+				printError("Poll Hangup/Error from socket");
+				break;
+			}
+		}
+		else if(poll_rc < 0)
+		{
+			printError(strcat("Error occured during polling: ", strerror(errno)));
+		}
+	}
+
+	/*while(1)
 	{
 		num_read = read(newsockfd, &buff, BUFF_SIZE);
 		if(num_read < 0)
@@ -93,12 +191,64 @@ void processInput(int newsockfd)
 		{
 			printError(strcat("Error while trying to write to stdout", strerror(errno)));
 		}
-		/*else
+
+	}*/
+}
+
+int createBashSession(int to_bash[2], int from_bash[2])
+{
+	int fork_rc = fork();
+	if(fork_rc < 0)
+	{
+		printError("Could not fork");
+	}
+	else if(fork_rc == 0)
+	{
+		// child process, do file redirection and then exec the bash shell
+		// close write end of the pipe that corresponds to data from server to shell in child process
+		// close read end of the pipe that corresponds to data from shell to pipe in child process
+		if( close(to_bash[WRITE_END]) == -1 || close(from_bash[READ_END]) == -1)
 		{
-			fprintf(stderr, "Sucessfully read and Wrote input from socket!!!\n");
-		}*/
+			printError(strcat("Could not close ends of pipe: ", strerror(errno)));
+		}
+		// do the file redirection now
+		// redirect read end to stdin
+		if(	close(STDIN_FILENO) == -1 || dup(to_bash[READ_END]) == -1 || close(to_bash[READ_END]) == -1)
+		{
+			printError(strcat("Error closing file descriptors: ", strerror(errno)));
+		}
+		if(close(STDOUT_FILENO) == -1 || dup(from_bash[WRITE_END]) == -1)
+		{
+			printError(strcat("Error closing file descriptors: ", strerror(errno)));
+		}
+		if(close(STDERR_FILENO) == -1 || dup(from_bash[WRITE_END]) == -1 )
+		{
+			printError(strcat("Error closing file descriptors: ", strerror(errno)));
+		}
+		if(close(from_bash[WRITE_END]) == -1)
+		{
+			printError(strcat("Error closing file descriptors: ", strerror(errno)));
+		}
+
+		// no errors in file redirection so just exec the shell!!!
+		char * args[] = {"/bin/bash", NULL};
+
+		if(execv(args[0], args) == -1)
+		{
+			printError("Could not execute shell");
+		}
+
 
 	}
+	else
+	{
+		// parent process, close the correct file descriptors and continue processing
+		close(to_bash[READ_END]);
+		close(from_bash[WRITE_END]);
+		return fork_rc;
+	}
+
+	return -1; // Will never be executed
 }
 
 int main(int argc, char *argv[])
@@ -143,7 +293,23 @@ int main(int argc, char *argv[])
 	}
 	
 	int newsockfd;
-	setupSocket(&newsockfd, port_num);
-	processInput(newsockfd);
+	setupSocket(&newsockfd, port_num); // function returns when an input has been 
+	
+	int to_bash[2]; // pipe from the server to the shell
+	int from_bash[2]; // pipe from the shell back to the server
+
+	if(pipe(to_bash) == -1)
+	{
+		printError(strcat("Could not create pipe: ", strerror(errno)));
+	}
+	if(pipe(from_bash) == -1)
+	{
+		printError(strcat("Could not create pipe: ", strerror(errno)));
+	}
+
+	int child_id = createBashSession(to_bash, from_bash); // the parent process now has the valid file descriptors to_bash[WRITE_END] and from_bash[READ_END]
+
+	processInput(newsockfd, to_bash[WRITE_END], from_bash[READ_END], child_id);
+
 	return 0;
 }

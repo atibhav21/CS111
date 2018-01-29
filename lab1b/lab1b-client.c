@@ -89,7 +89,14 @@ void setUpSocket(int* sockfd, int port_num)
 
 void perform_writes(int log_specified, int log_fd, int sock_fd, char* buff, int num_bytes)
 {
-	if(write(STDOUT_FILENO, &buff[0], num_bytes) == -1)
+	if(buff[0] == '\r' || buff[0] =='\n')
+	{
+		if(write(STDOUT_FILENO, "\r\n", 2) == -1)
+		{
+			printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+		}
+	}
+	else if(write(STDOUT_FILENO, &buff[0], num_bytes) == -1)
 	{
 		printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
 	}
@@ -103,10 +110,85 @@ void perform_writes(int log_specified, int log_fd, int sock_fd, char* buff, int 
 	}
 }
 
-void processInput(int port_num, int log_specified, int log_fd)
+
+void processPollResult(struct pollfd input_sources[2], int log_specified, int log_fd, int sock_fd, int* eof_received)
 {
 	char buff[10];
-	int num_read;
+	
+	char buff_sock[256];
+	if(input_sources[0].revents & POLLIN)
+	{
+		// input from the keyboard
+		int num_read;
+		if((num_read = read(STDIN_FILENO, &buff, 10)) == -1)
+		{
+			printErrorAndReset(strcat("Error while reading input: ", strerror(errno)));
+		}
+		int i;
+		for(i = 0; i < num_read; i+= 1)
+		{
+			// TODO: Change
+			if(buff[i] == 4) // ^D received so exit as of now
+			{
+				*eof_received = TRUE;
+				//break;
+			}
+			/*else if(buff[i] == '\r' || buff[i] == '\n')
+			{
+				perform_writes(log_specified, log_fd, sock_fd, "\r\n", 2);
+			}*/
+			else
+			{
+				perform_writes(log_specified, log_fd, sock_fd, &buff[i], 1);
+			}
+		}
+	}
+	else if(input_sources[0].revents & (POLLHUP | POLLERR))
+	{
+		// some error receiving input from the keyboard
+		printErrorAndReset("Poll Hangup/Error occured on Keyboard file descriptor");
+	}
+	else if(input_sources[1].revents & POLLIN)
+	{
+		// input from the socket
+		int num_read;
+		if((num_read = read(sock_fd, &buff_sock, 256)) == -1)
+		{
+			printErrorAndReset(strcat("Error while reading socket input: ", strerror(errno)));
+		}
+		int i;
+		for(i = 0; i < num_read; i += 1)
+		{
+			if(buff_sock[i] == '\r' || buff_sock[i] == '\n')
+			{
+				if(write(STDOUT_FILENO, "\r\n", 2) == -1)
+				{
+					printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
+				}
+			}
+			else
+			{
+				if(write(STDOUT_FILENO, &buff_sock[i], 1) == -1)
+				{
+					printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
+				}
+			}
+		}
+	}
+	else if(input_sources[1].revents & POLLHUP)
+	{
+		// hangup received from socket file descriptor
+		*eof_received = TRUE; // TODO: Possibly change
+		//break;
+	}
+	else if(input_sources[1].revents & POLLERR)
+	{
+		printErrorAndReset(strcat("Error received during polling: ", strerror(errno)));
+	}
+}
+
+void processInput(int port_num, int log_specified, int log_fd)
+{
 	int eof_received = FALSE; // TODO: remove
 	int sock_fd;
 
@@ -120,54 +202,21 @@ void processInput(int port_num, int log_specified, int log_fd)
 	input_sources[1].fd = sock_fd;
 	input_sources[1].events = POLLIN | POLLHUP | POLLERR;
 
+	int poll_result;
 	while(! eof_received)
 	{
-		if((num_read = read(STDIN_FILENO, &buff, 10)) == -1)
+		poll_result = poll(input_sources, 2, 0);
+		if(poll_result > 0)
 		{
-			printErrorAndReset(strcat("Error while reading input: ", strerror(errno)));
+			processPollResult(input_sources, log_specified, log_fd, sock_fd, &eof_received);
+
 		}
-		int i;
-		for(i = 0; i < num_read; i+= 1)
+		else if(poll_result < 0)
 		{
-			// TODO: Change
-			if(buff[i] == 4) // ^D received so exit as of now
-			{
-				eof_received = TRUE;
-				break;
-			}
-			else if(buff[i] == '\r' || buff[i] == '\n')
-			{
-				perform_writes(log_specified, log_fd, sock_fd, "\r\n", 2);
-				/*if(write(STDOUT_FILENO, "\r\n", 2) == -1) 
-				{
-					printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
-				}
-				if(log_specified && write(log_fd, "\r\n", 2) == -1)
-				{	
-					printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
-				}
-				if(write(sock_fd, "\r\n", 2) == -1)
-				{
-					printErrorAndReset(strcat("Error while trying to write to socket: ", strerror(errno)));
-				}*/
-			}
-			else
-			{
-				perform_writes(log_specified, log_fd, sock_fd, &buff[i], 1);
-				/*if(write(STDOUT_FILENO, &buff[i], 1) == -1)
-				{
-					printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
-				}
-				if(log_specified && write(log_fd, &buff[i], 1) == -1)
-				{
-					printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
-				}
-				if(write(sock_fd, &buff[i], 1) == -1)
-				{
-					printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
-				}*/
-			}
+			printErrorAndReset(strcat("Error received during polling: ", strerror(errno)));
 		}
+
+		
 	}
 }
 
