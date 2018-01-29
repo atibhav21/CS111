@@ -98,7 +98,7 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 
 	int eof_received = FALSE;
 
-	//signal(SIGPIPE, SIG_IGN);
+	signal(SIGPIPE, SIG_IGN); // ignore the SIGPIPE status
 
 	while(! eof_received)
 	{
@@ -112,22 +112,23 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 				// forward it to shell
 				int num_read ;
 				num_read = read(newsockfd, &buff, 10);
-				if(num_read < 0)
+				if(num_read <= 0)
 				{
 					// Read error or EOF received from the network
-					/*close(write_to_bash_fd);
+					close(write_to_bash_fd);
 					eof_received = TRUE;
-					break;*/
-					printError("Could not read from socket");
+					break;
+					//printError("Could not read from socket");
 				}
 				int i;
 				for(i = 0; i < num_read; i += 1)
 				{
-					if(buff[i] == 0x03 || buff[i] == 0x04) // ^C received TODO: CHANGE!!!!!!!!
+					if(buff[i] == 0x03) // ^C received TODO: CHANGE!!!!!!!!
 					{
-						eof_received = 1;
-						break;
-						/*if(kill(child_id, SIGINT) < 0)
+						/*eof_received = 1;
+						break;*/
+						// ^C received so send kill signal and continue writing to the shell
+						if(kill(child_id, SIGINT) < 0)
 						{
 							printError(strcat("Error while sending SIGNINT to child: ", strerror(errno)));
 						}
@@ -135,17 +136,17 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 						if(write(write_to_bash_fd, &buff[i], 1) < 0)
 						{
 							printError(strcat("Error while writing to bash shell: ", strerror(errno)));
-						}*/
+						}
 					}
-					/*else if(buff[i] == 0x04) // ^D received
+					else if(buff[i] == 0x04) // ^D received
 					{
 						if(close(write_to_bash_fd) < 0)
 						{
 							printError(strcat("Error while trying to close fd: ", strerror(errno)));
 						}
-						eof_received = 1;
+						eof_received = TRUE;
 						break;
-					}*/
+					}
 					else if(buff[i] == '\r' || buff[i]=='\n')
 					{
 						if(write(write_to_bash_fd, "\n", 1) == -1)
@@ -202,7 +203,7 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 	}
 
 	// finish processing input from the shell
-	/*while(1)
+	while(1)
 	{
 		int num_read = read(read_from_bash_fd, &buff_shell, BUFF_SIZE);
 		if(num_read < 0)
@@ -232,7 +233,7 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 	{
 		// successfully finished reading all of the shell's output
 		fprintf(stderr, "SHELL EXIT SIGNAL=%d STATUS=%d\r\n", (shell_status & 0x007f), ((shell_status & 0xff00) >> 8));
-	}*/
+	}
 }
 
 int createBashSession(int to_bash[2], int from_bash[2])
