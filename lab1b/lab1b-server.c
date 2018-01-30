@@ -16,6 +16,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <signal.h>
+#include <zlib.h>
 
 extern int errno;
 extern char* optarg;
@@ -227,7 +228,7 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 	if(waitpid(child_id, &shell_status, 0) == -1)
 	{
 		// error
-		printError(strcat("Error occured while waiti shell", strerror(errno)));
+		printError(strcat("Error occured while waiting for shell", strerror(errno)));
 	}
 	else
 	{
@@ -236,7 +237,7 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 	}
 }
 
-int createBashSession(int to_bash[2], int from_bash[2])
+int createBashSession(int to_bash[2], int from_bash[2], int socketfd)
 {
 	int fork_rc = fork();
 	if(fork_rc < 0)
@@ -267,6 +268,11 @@ int createBashSession(int to_bash[2], int from_bash[2])
 			printError(strcat("Error closing file descriptors: ", strerror(errno)));
 		}
 		if(close(from_bash[WRITE_END]) == -1)
+		{
+			printError(strcat("Error closing file descriptors: ", strerror(errno)));
+		}
+
+		if(close(socketfd) == -1)
 		{
 			printError(strcat("Error closing file descriptors: ", strerror(errno)));
 		}
@@ -348,9 +354,14 @@ int main(int argc, char *argv[])
 		printError(strcat("Could not create pipe: ", strerror(errno)));
 	}
 
-	int child_id = createBashSession(to_bash, from_bash); // the parent process now has the valid file descriptors to_bash[WRITE_END] and from_bash[READ_END]
+	int child_id = createBashSession(to_bash, from_bash, newsockfd); // the parent process now has the valid file descriptors to_bash[WRITE_END] and from_bash[READ_END]
 
 	processInput(newsockfd, to_bash[WRITE_END], from_bash[READ_END], child_id);
+
+	if(close(newsockfd) == -1)
+	{
+		printError("Error closing socket");
+	}
 
 	return 0;
 }

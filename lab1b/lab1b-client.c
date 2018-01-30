@@ -15,6 +15,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <poll.h>
+#include <zlib.h>
 
 extern int errno;
 extern char* optarg;
@@ -102,13 +103,30 @@ void perform_writes(int log_specified, int log_fd, int sock_fd, char* buff, int 
 	{
 		printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
 	}
-	if(log_specified && write(log_fd, &buff[0], num_bytes) == -1)
+	/*if(log_specified && write(log_fd, &buff[0], num_bytes) == -1)
 	{
+		/*char num_bytes_string[20];
+		sprintf(num_bytes_string, "%d", num_bytes);
+		char log_str [100];
+		strcpy(log_str, strcat(strcat(strcat("SENT ", num_bytes_string), " bytes: "), buff));
+		fprintf(stderr, "%s\n", log_str);
+
 		printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
-	}
+	}*/
 	if(write(sock_fd, &buff[0], num_bytes) == -1)
 	{
 		printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+	}
+	else
+	{
+		if(log_specified)
+		{
+			
+			if(write(log_fd, &buff[0], 1) == -1)
+			{
+				printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
+			}
+		}
 	}
 }
 
@@ -158,6 +176,10 @@ void processPollResult(struct pollfd input_sources[2], int log_specified, int lo
 		{
 			printErrorAndReset(strcat("Error while reading socket input: ", strerror(errno)));
 		}
+		if(num_read == 0)
+		{
+			*eof_received = TRUE;
+		}
 		int i;
 		for(i = 0; i < num_read; i += 1)
 		{
@@ -180,6 +202,7 @@ void processPollResult(struct pollfd input_sources[2], int log_specified, int lo
 	else if(input_sources[1].revents & POLLHUP)
 	{
 		// hangup received from socket file descriptor
+		//fprintf(stderr, "Received POLLHUP\r\n");
 		*eof_received = TRUE; // TODO: Possibly change
 		//break;
 	}
@@ -200,8 +223,6 @@ void processInput(int port_num, int log_specified, int log_fd)
 
 	setUpSocket(&sock_fd, port_num);
 
-
-
 	input_sources[0].fd = STDIN_FILENO;
 	input_sources[0].events = POLLIN | POLLHUP | POLLERR;
 
@@ -221,7 +242,6 @@ void processInput(int port_num, int log_specified, int log_fd)
 		{
 			printErrorAndReset(strcat("Error received during polling: ", strerror(errno)));
 		}
-
 		
 	}
 }
@@ -269,7 +289,7 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-	// TODO: Check if preemptive exit if any argument is not passed!!
+	
 	if(port_set == FALSE)
 	{
 		printUsageMessage();
