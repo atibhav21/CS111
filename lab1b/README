@@ -1,3 +1,24 @@
 NAME: Atibhav Mittal
 EMAIL: atibhav.mittal6@gmail.com
 ID: 804598987
+
+The tarball contains 4 files:
+
+1. README: The file that describes the contents of the tarball
+2. Makefile: The file that sets the targets for the make command.
+			It supports make client, make server, make, make clean
+			and make dist
+3. lab1b-client.c: This is the file that contains the source code
+			for the client program. The client program attempts to
+			connect to the server and display the output of the 
+			commands from the server's shell. It also supports a
+			compress option to send the data over the socket in a
+			compressed form.
+4. lab1b-server.c: This is the file the contains the source code for
+			the server. It sets up a socket, and accepts connections
+			from the client. On successfully connecting to a client,
+			it starts a bash shell, and sends the results of executing
+			commands from the shell back to the client. On exiting, it
+			reports the exit status of the shell. It also supports a 
+			compress option that sends the data over the socket connection
+			in a compressed form.

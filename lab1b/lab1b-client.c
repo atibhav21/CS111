@@ -82,14 +82,14 @@ void setUpSocket(int* sockfd, int port_num)
 	serv_addr.sin_port = htons(port_num);
 
 	
-	if(connect(*sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) // TODO: This is causing a segfault
+	if(connect(*sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) 
 	{
 		printErrorAndReset(strcat("Error connecting to server: ", strerror(errno)));
 	}
 
 
 }
-
+/*
 void perform_writes(int log_specified, int log_fd, int sock_fd, char* buff, int num_bytes)
 {
 	if(buff[0] == '\r' || buff[0] =='\n')
@@ -103,16 +103,16 @@ void perform_writes(int log_specified, int log_fd, int sock_fd, char* buff, int 
 	{
 		printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
 	}
-	/*if(log_specified && write(log_fd, &buff[0], num_bytes) == -1)
+	if(log_specified && write(log_fd, &buff[0], num_bytes) == -1)
 	{
-		/*char num_bytes_string[20];
+		char num_bytes_string[20];
 		sprintf(num_bytes_string, "%d", num_bytes);
 		char log_str [100];
 		strcpy(log_str, strcat(strcat(strcat("SENT ", num_bytes_string), " bytes: "), buff));
 		fprintf(stderr, "%s\n", log_str);
 
 		printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
-	}*/
+	}
 	if(write(sock_fd, &buff[0], num_bytes) == -1)
 	{
 		printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
@@ -128,14 +128,81 @@ void perform_writes(int log_specified, int log_fd, int sock_fd, char* buff, int 
 			}
 		}
 	}
+}*/
+
+int deflate_buffer(unsigned char* buffer, int num_read, unsigned char* output_buffer, int output_buffer_size)
+{
+	z_stream buffer_to_server;
+
+	buffer_to_server.zalloc = Z_NULL;
+	buffer_to_server.zfree = Z_NULL;
+	buffer_to_server.opaque = Z_NULL;
+
+	if(deflateInit(&buffer_to_server, Z_DEFAULT_COMPRESSION) != Z_OK)
+	{
+		printErrorAndReset("Could not Initialize Deflate");
+	}
+
+	buffer_to_server.avail_in = num_read;
+	buffer_to_server.next_in = buffer;
+	buffer_to_server.avail_out = output_buffer_size;
+	buffer_to_server.next_out = output_buffer;
+
+	do {
+		if(deflate(&buffer_to_server, Z_SYNC_FLUSH) == Z_STREAM_ERROR)
+		{
+			deflateEnd(&buffer_to_server);
+			printErrorAndReset("Could not compress buffer");
+		}
+	} while(buffer_to_server.avail_in > 0);
+
+	int compressed_buffer_size = output_buffer_size - buffer_to_server.avail_out;
+
+	deflateEnd(&buffer_to_server);
+
+	return compressed_buffer_size;
+}
+
+int inflate_buffer(unsigned char* buffer, int num_read, unsigned char* output_buffer, int output_buffer_size)
+{
+	z_stream server_to_stdout;
+
+	server_to_stdout.zalloc = Z_NULL;
+	server_to_stdout.zfree = Z_NULL;
+	server_to_stdout.opaque = Z_NULL;
+
+	if(inflateInit(&server_to_stdout) != Z_OK)
+	{
+		printErrorAndReset("Could not Initialize Inflate");
+	}
+
+	server_to_stdout.avail_in = num_read;
+	server_to_stdout.next_in = buffer;
+	server_to_stdout.avail_out = output_buffer_size;
+	server_to_stdout.next_out = output_buffer;
+
+	do {
+		if(inflate(&server_to_stdout, Z_SYNC_FLUSH) == Z_STREAM_ERROR)
+		{
+			inflateEnd(&server_to_stdout);
+			printErrorAndReset("Could not inflate compressed buffer");
+		}
+	} while(server_to_stdout.avail_in > 0);
+
+	int decompressed_buffer_size = output_buffer_size - server_to_stdout.avail_out;
+
+	inflateEnd(&server_to_stdout);
+
+	return decompressed_buffer_size;
 }
 
 
-void processPollResult(struct pollfd input_sources[2], int log_specified, int log_fd, int sock_fd, int* eof_received)
+void processPollResult(struct pollfd input_sources[2], int log_specified, int log_fd, int sock_fd, int* eof_received, int compress_mode)
 {
-	char buff[10];
+	unsigned char buff[10];
 	
-	char buff_sock[256];
+	unsigned char buff_sock[256];
+
 	if(input_sources[0].revents & POLLIN)
 	{
 		// input from the keyboard
@@ -144,22 +211,75 @@ void processPollResult(struct pollfd input_sources[2], int log_specified, int lo
 		{
 			printErrorAndReset(strcat("Error while reading input: ", strerror(errno)));
 		}
+		
+		if(compress_mode)
+		{
+			// compress mode so compress and then send over the socket
+			unsigned char compression_buff[20];
+			int size_compressed = deflate_buffer(buff, num_read, compression_buff, 20);
+			if(write(sock_fd, compression_buff, size_compressed) == -1)
+			{
+				printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+			}
+			else
+			{
+				if(log_specified)
+				{
+					char log_str[25];
+					sprintf(log_str, "SENT %d bytes: ", size_compressed);
+					write(log_fd, log_str, strlen(log_str));
+					write(log_fd, &compression_buff[0], size_compressed);
+					write(log_fd, "\r\n", 2);
+				}
+			}
+
+		}
+		else
+		{
+			if(write(sock_fd, &buff[0], num_read) == -1)
+			{
+				printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+			}
+			else
+			{
+				if(log_specified)
+				{
+					char log_str[25];
+					sprintf(log_str, "SENT %d bytes: ", num_read);	
+					write(log_fd, log_str, strlen(log_str));
+					write(log_fd, &buff[0], num_read);
+					write(log_fd, "\r\n", 2);
+					/*fprintf(stderr, "%s %s\r\n", log_str, &buff[i]);
+					if(write(log_fd, &buff[i], 1) == -1)
+					{
+						printErrorAndReset(strcat("Error while trying to write to logfile: ", strerror(errno)));
+					}*/
+				}
+			}
+		}
+		
+
 		int i;
 		for(i = 0; i < num_read; i+= 1)
 		{
-			// TODO: Change
-			if(buff[i] == 4) // ^D received so exit as of now
+			if(buff[i] == 4) 
 			{
 				*eof_received = TRUE;
 				//break;
 			}
-			/*else if(buff[i] == '\r' || buff[i] == '\n')
-			{
-				perform_writes(log_specified, log_fd, sock_fd, "\r\n", 2);
-			}*/
 			else
 			{
-				perform_writes(log_specified, log_fd, sock_fd, &buff[i], 1);
+				if(buff[i] == '\r' || buff[i] =='\n')
+				{
+					if(write(STDOUT_FILENO, "\r\n", 2) == -1)
+					{
+						printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+					}
+				}
+				else if(write(STDOUT_FILENO, &buff[i], 1) == -1)
+				{
+					printErrorAndReset(strcat("Error while trying to write: ", strerror(errno)));
+				}				
 			}
 		}
 	}
@@ -180,30 +300,82 @@ void processPollResult(struct pollfd input_sources[2], int log_specified, int lo
 		{
 			*eof_received = TRUE;
 		}
-		int i;
-		for(i = 0; i < num_read; i += 1)
+
+		if(compress_mode)
 		{
-			if(buff_sock[i] == '\r' || buff_sock[i] == '\n')
+			if(log_specified)
 			{
-				if(write(STDOUT_FILENO, "\r\n", 2) == -1)
-				{
-					printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
-				}
+				char log_str[29];
+				sprintf(log_str, "RECEIVED %d bytes: ", num_read);
+				write(log_fd, log_str, strlen(log_str));
+				write(log_fd, &buff_sock[0], num_read);
+				write(log_fd, "\r\n", 2);
 			}
-			else
+
+			unsigned char decompression_buff[512];
+			int size_decompressed = inflate_buffer(buff_sock, num_read, decompression_buff, 512);
+			// need to write it to stdout and log it to the log file
+
+			
+
+			int i;
+			for(i = 0; i < size_decompressed; i += 1)
 			{
-				if(write(STDOUT_FILENO, &buff_sock[i], 1) == -1)
+				if(decompression_buff[i] == '\r' || decompression_buff[i] == '\n')
 				{
-					printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
+					if(write(STDOUT_FILENO, "\r\n", 2) == -1)
+					{
+						printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
+					}
+				}
+				else
+				{
+					if(write(STDOUT_FILENO, &decompression_buff[i], 1) == -1)
+					{
+						printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
+					}
 				}
 			}
 		}
+		else
+		{
+			if(log_specified)
+			{
+				char log_str[29];
+				sprintf(log_str, "RECEIVED %d bytes: ", num_read);
+				write(log_fd, log_str, strlen(log_str));
+				write(log_fd, &buff_sock[0], num_read);
+				write(log_fd, "\r\n", 2);
+			}
+
+
+			int i;
+			for(i = 0; i < num_read; i += 1)
+			{
+				if(buff_sock[i] == '\r' || buff_sock[i] == '\n')
+				{
+					if(write(STDOUT_FILENO, "\r\n", 2) == -1)
+					{
+						printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
+					}
+				}
+				else
+				{
+					if(write(STDOUT_FILENO, &buff_sock[i], 1) == -1)
+					{
+						printErrorAndReset(strcat("Error while writing to stdout: ", strerror(errno)));
+					}
+				}
+			}
+		}
+
+		
 	}
 	else if(input_sources[1].revents & POLLHUP)
 	{
 		// hangup received from socket file descriptor
 		//fprintf(stderr, "Received POLLHUP\r\n");
-		*eof_received = TRUE; // TODO: Possibly change
+		*eof_received = TRUE; 
 		//break;
 	}
 	else if(input_sources[1].revents & POLLERR)
@@ -212,14 +384,12 @@ void processPollResult(struct pollfd input_sources[2], int log_specified, int lo
 	}
 }
 
-void processInput(int port_num, int log_specified, int log_fd)
+void processInput(int port_num, int log_specified, int log_fd, int compress_mode)
 {
-	int eof_received = FALSE; // TODO: remove
+	int eof_received = FALSE;
 	int sock_fd;
 
 	struct pollfd input_sources[2]; // input_sources[0] is the keyboard, input_sources[1] is the socket fd
-
-	
 
 	setUpSocket(&sock_fd, port_num);
 
@@ -230,12 +400,13 @@ void processInput(int port_num, int log_specified, int log_fd)
 	input_sources[1].events = POLLIN | POLLHUP | POLLERR;
 
 	int poll_result;
+
 	while(! eof_received)
 	{
 		poll_result = poll(input_sources, 2, 0);
 		if(poll_result > 0)
 		{
-			processPollResult(input_sources, log_specified, log_fd, sock_fd, &eof_received);
+			processPollResult(input_sources, log_specified, log_fd, sock_fd, &eof_received, compress_mode);
 
 		}
 		else if(poll_result < 0)
@@ -263,7 +434,7 @@ int main(int argc, char *argv[])
 	int port_num;
 	int port_set = FALSE;
 	int log_specified = FALSE;
-	//int compress_mode = FALSE;
+	int compress_mode = FALSE;
 	while(1)
 	{
 		c = getopt_long(argc, argv, "", long_options, &option_index);
@@ -281,8 +452,8 @@ int main(int argc, char *argv[])
 				case 'l': log_specified = TRUE;
 							log_filename = optarg;
 							break;
-				/*case 'c': compress_mode = TRUE;
-							break;*/
+				case 'c': compress_mode = TRUE;
+							break;
 				default:
 					printUsageMessage();
 					exit(1);
@@ -315,9 +486,7 @@ int main(int argc, char *argv[])
 			printErrorAndReset(strcat("Could not open logfile: ", strerror(errno)));
 		}
 	} 
-
-
-	processInput(port_num, log_specified, log_fd);
+	processInput(port_num, log_specified, log_fd, compress_mode);
 
 	
 	if(log_specified && close(log_fd) == -1)

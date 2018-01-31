@@ -64,7 +64,7 @@ void setupSocket(int* newsockfd, int port_num)
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port = htons(port_num);
 	
-	if(bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) // TODO: bind function creates junk files
+	if(bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
 	{
 		printError(strcat("Error while trying to bind socket: ", strerror(errno)));
 	}
@@ -82,11 +82,74 @@ void setupSocket(int* newsockfd, int port_num)
 	//char buff[BUFF_SIZE];
 }
 
-// newsockfd is the file descriptor for the socket
-void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, int child_id)
+int deflate_buffer(unsigned char* buffer, int num_read, unsigned char* output_buffer, int output_buffer_size)
 {
-	char buff[10]; // TODO: Check if this needs to made larger for the compress option (to 1kb)?
-	char buff_shell[BUFF_SIZE];
+	z_stream buffer_to_server;
+
+	buffer_to_server.zalloc = Z_NULL;
+	buffer_to_server.zfree = Z_NULL;
+	buffer_to_server.opaque = Z_NULL;
+
+	if(deflateInit(&buffer_to_server, Z_DEFAULT_COMPRESSION) != Z_OK)
+	{
+		printError("Could not Initialize Deflate");
+	}
+
+	buffer_to_server.avail_in = num_read;
+	buffer_to_server.next_in = buffer;
+	buffer_to_server.avail_out = output_buffer_size;
+	buffer_to_server.next_out = output_buffer;
+
+	do {
+		if(deflate(&buffer_to_server, Z_SYNC_FLUSH) == Z_STREAM_ERROR)
+		{
+			deflateEnd(&buffer_to_server);
+			printError("Could not compress buffer");
+		}
+	} while(buffer_to_server.avail_in > 0);
+
+	int compressed_buffer_size = output_buffer_size - buffer_to_server.avail_out;
+
+	deflateEnd(&buffer_to_server);
+
+	return compressed_buffer_size;
+}
+
+int inflate_buffer(unsigned char* buffer, int num_read, unsigned char* output_buffer, int output_buffer_size)
+{
+	z_stream server_to_stdout;
+
+	server_to_stdout.zalloc = Z_NULL;
+	server_to_stdout.zfree = Z_NULL;
+	server_to_stdout.opaque = Z_NULL;
+
+	if(inflateInit(&server_to_stdout) != Z_OK)
+	{
+		printError("Could not Initialize Inflate");
+	}
+	server_to_stdout.avail_in = num_read;
+	server_to_stdout.next_in = buffer;
+	server_to_stdout.avail_out = output_buffer_size;
+	server_to_stdout.next_out = output_buffer;
+	do {
+		inflate(&server_to_stdout, Z_SYNC_FLUSH);
+		/*{
+			inflateEnd(&server_to_stdout);
+			printError("Could not inflate compressed buffer");
+		}*/
+	} while(server_to_stdout.avail_in > 0);
+	int decompressed_buffer_size = output_buffer_size - server_to_stdout.avail_out;
+
+	inflateEnd(&server_to_stdout);
+
+	return decompressed_buffer_size;
+}
+
+// newsockfd is the file descriptor for the socket
+void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, int child_id, int compress_mode)
+{
+	unsigned char buff[20]; 
+	unsigned char buff_shell[BUFF_SIZE];
 	//int num_read;
 
 	struct pollfd input_sources[2];
@@ -112,7 +175,7 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 				// input received from the client 
 				// forward it to shell
 				int num_read ;
-				num_read = read(newsockfd, &buff, 10);
+				num_read = read(newsockfd, &buff, 20);
 				if(num_read <= 0)
 				{
 					// Read error or EOF received from the network
@@ -121,10 +184,21 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 					break;
 					//printError("Could not read from socket");
 				}
+				if(compress_mode)
+				{
+					
+					unsigned char decompressed_buff[20];
+					int decompressed_size = inflate_buffer(buff, num_read, decompressed_buff, 20);
+
+					strcpy((char *)buff, (char *) decompressed_buff);
+					num_read = decompressed_size;
+
+					
+				}
 				int i;
 				for(i = 0; i < num_read; i += 1)
 				{
-					if(buff[i] == 0x03) // ^C received TODO: CHANGE!!!!!!!!
+					if(buff[i] == 0x03) 
 					{
 						/*eof_received = 1;
 						break;*/
@@ -167,7 +241,6 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 			else if(input_sources[0].revents & (POLLHUP | POLLERR))
 			{
 				// some kind of error occured during input from the client
-				// TODO: Check if POLLHUP should also cause server to quit
 				printError("Poll Hangup/Error from socket");
 				break;
 			}
@@ -179,10 +252,23 @@ void processInput(int newsockfd, int write_to_bash_fd, int read_from_bash_fd, in
 				{
 					printError(strcat("Error while reading from shell: ", strerror(errno)));
 				}
-				if(write(newsockfd, &buff_shell, num_read) == -1)
+				if(compress_mode)
 				{
-					printError(strcat("Error while writing to the socket: ", strerror(errno)));
+					unsigned char compressed_buffer[512];
+					int compressed_buff_size = deflate_buffer(buff_shell, num_read, compressed_buffer, 512);
+					if(write(newsockfd, &compressed_buffer[0], compressed_buff_size) == -1)
+					{
+						printError(strcat("Error while writing to the socket: ", strerror(errno)));
+					}
 				}
+				else
+				{
+					if(write(newsockfd, &buff_shell, num_read) == -1)
+					{
+						printError(strcat("Error while writing to the socket: ", strerror(errno)));
+					}
+				}
+				
 			}
 			else if(input_sources[1].revents & POLLHUP)
 			{
@@ -295,7 +381,7 @@ int createBashSession(int to_bash[2], int from_bash[2], int socketfd)
 		return fork_rc;
 	}
 
-	return -1; // Will never be executed
+	return -1; // Will never be executed (only to get rid of warnings)
 }
 
 int main(int argc, char *argv[])
@@ -356,7 +442,7 @@ int main(int argc, char *argv[])
 
 	int child_id = createBashSession(to_bash, from_bash, newsockfd); // the parent process now has the valid file descriptors to_bash[WRITE_END] and from_bash[READ_END]
 
-	processInput(newsockfd, to_bash[WRITE_END], from_bash[READ_END], child_id);
+	processInput(newsockfd, to_bash[WRITE_END], from_bash[READ_END], child_id, compress_mode);
 
 	if(close(newsockfd) == -1)
 	{

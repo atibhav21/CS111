@@ -3,7 +3,7 @@
 # ID: 804598987
 
 CC=gcc
-CFLAGS=-Wall -Wextra
+CFLAGS=-Wall -Wextra -lz
 CLIENT_TARGET = lab1b-client
 SERVER_TARGET = lab1b-server
 
