@@ -1,0 +1,14 @@
+NAME: Atibhav Mittal
+EMAIL: atibhav.mittal6@gmail.com
+ID: 804598987
+
+Serial Number of Beaglebone: BBGW17051801
+MAC Address: 2CF7F1066697
+
+The files in the tarball are:
+1. README: Contains the information about the files in the tarball and the serial number of the beaglebone used and the Wi-Fi MAC address
+2. connected.png: Screenshot that shows that the Beaglebone configured access over Wi-fi
+3. my_beaglbone.jpg: Image of my selfie with the Beaglebone
+4. copy.png: Screenshot of copying a hello.c file from my Mac to the Beaglebone via ssh over Wi-Fi
+5. build_run.png: Screenshot of the compilation and execution of a hello.c program on the Beaglebone
+6. git.png: Screenshot showing cloning the git repository on the Beaglebone

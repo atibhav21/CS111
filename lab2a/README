@@ -1,0 +1,22 @@
+Command to run:
+
+./lab2_add --threads=# --iterations=# | tee -a lab2_add.csv
+
+2.1.1 
+
+Why does it take many iterations before errors are seen? Why does a significantly
+small number of iterations so seldom fail?
+
+It takes a large number of iterations before errors are seen because it is possible that
+for a small number of iterations, each thread is able to finish its computation, for the 
+number of times its required to, before the end of its time slice. This leads to no context 
+switches, within the loop for performing the addition or subtraction to the counter. 
+
+2.1.2
+Why are the --yield runs so much slower?
+The --yield runs much slower due to the cost of context switching. The additional time goes
+into switching into Kernel mode, performing the context switch, and switching back to user mode.
+It isn't possible to get valid per-operation timings for the --yield option since we cannot
+calculate how much time is being used to perform the context switch. This leads to a skewed
+total time measurement for the lab2_add program, which leads to a skewed per operation time
+when the yield option is enabled.
