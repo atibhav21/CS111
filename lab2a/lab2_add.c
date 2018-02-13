@@ -21,6 +21,8 @@ long long counter = 0;
 int lock_type = NO_LOCK;
 int opt_yield = FALSE;
 
+pthread_mutex_t lock;
+
 void printUsageMessage()
 {
 	fprintf(stderr, "usage: ./lab2_add.c [--threads=num] [--iterations=num]\n");
@@ -28,7 +30,7 @@ void printUsageMessage()
 
 void exitError()
 {
-	fprintf(stderr, "Error encountered: %s", strerror(errno));
+	fprintf(stderr, "Error encountered: %s\n", strerror(errno));
 	exit(1);
 }
 
@@ -52,12 +54,14 @@ void add(long long *pointer, long long value) {
 	*pointer = sum;
 }
 
+void add_compare_swap(long long *pointer, long long value) {
+
+}
+
 void* addNumIterations(void* num_iterations)
 {
 	int* num = (int *) num_iterations;
 	int i;
-
-	pthread_mutex_t lock;
 
 	for(i = 0; i < *num; i+= 1)
 	{
@@ -71,11 +75,12 @@ void* addNumIterations(void* num_iterations)
 						pthread_mutex_unlock(&lock);
 						break;
 			case SPIN_LOCK:
-						while(__sync_lock_test_and_set(&counter, 1));
-						add(&counter, 1);
-						__sync_lock_release(&counter);
+						while(__sync_lock_test_and_set(&counter, 1)); // spin
+						add(&counter, 1); // change counter
+						__sync_lock_release(&counter); // release the lock
 						break;
 			case COMPARE_AND_SWAP:
+						// TODO
 						break;	
 			default:
 				exitError();
@@ -98,6 +103,7 @@ void* addNumIterations(void* num_iterations)
 						__sync_lock_release(&counter);
 						break;
 			case COMPARE_AND_SWAP:
+						// TODO
 						break;
 			default:
 				 exitError();
@@ -142,7 +148,7 @@ int main(int argc, char *argv[])
 					break;
 			case 's': synchronization = TRUE;
 			 		// TODO: Possibly check for length of optarg
-					lock_char = (char) optarg[0] - 'a';
+					lock_char = (char) optarg[0];
 					break;
 			default:
 				printUsageMessage();
@@ -154,14 +160,42 @@ int main(int argc, char *argv[])
 
 	if(synchronization)
 	{
-		printf("Lock status: %d", lock_char );
+		//printf("Lock status: %c", lock_char );
 		switch(lock_char)
 		{
 			case 's': lock_type = SPIN_LOCK;
+					if(opt_yield)
+					{
+						strcpy(test_name, "add-yield-s");
+					}
+					else
+					{
+						strcpy(test_name, "add-s");
+					}
 					break;
 			case 'm': lock_type = MUTEX;
+					if(pthread_mutex_init(&lock, NULL) != 0)
+					{
+						exitError();
+					}
+					if(opt_yield)
+					{
+						strcpy(test_name, "add-yield-m");
+					}
+					else
+					{
+						strcpy(test_name, "add-m");
+					}
 					break;
 			case 'c': lock_type = COMPARE_AND_SWAP;
+					if(opt_yield)
+					{
+						strcpy(test_name, "add-yield-c");
+					}
+					else
+					{
+						strcpy(test_name, "add-c");
+					}
 					break;
 			default:
 				printUsageMessage();
