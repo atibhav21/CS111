@@ -3,11 +3,12 @@
 # ID: 804598987
 
 CC=gcc
-CFLAGS=-Wall -Wextra -pthread
+#TODO: REMOVE THE -g
+CFLAGS=-Wall -Wextra -pthread -g 
 
 build: lab2_add.c #SortedList.h SortedList.c lab2_list.c
 	$(CC) $(CFLAGS) -o lab2_add lab2_add.c
-	#$(CC) $(CFLAGS) -o lab2_list lab2_add.c SortedList.h SortedList.c
+	$(CC) $(CFLAGS) -o lab2_list lab2_list.c SortedList.h SortedList.c
 
 tests: lab2_add #lab2_list
 	rm -f lab2_add.csv # Delete the old file if it exists
@@ -17,7 +18,7 @@ tests: lab2_add #lab2_list
 	./test_script.sh
 
 graphs:
-	gnuplot lab2_add.gp 
+	./lab2_add.gp 
 	#gnuplot lab2_list.gp
 
 dist:

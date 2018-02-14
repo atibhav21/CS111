@@ -212,7 +212,7 @@ int main(int argc, char *argv[])
 	}
 	
 
-	pthread_t* threads = malloc(num_threads * sizeof(pthread_t));
+	pthread_t* threads = (pthread_t*) malloc(num_threads * sizeof(pthread_t));
 
 	if( clock_gettime(CLOCK_MONOTONIC, &start) == -1)
 	{
