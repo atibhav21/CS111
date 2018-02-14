@@ -10,17 +10,11 @@ build: lab2_add.c #SortedList.h SortedList.c lab2_list.c
 	#$(CC) $(CFLAGS) -o lab2_list lab2_add.c SortedList.h SortedList.c
 
 tests: lab2_add #lab2_list
+	rm -f lab2_add.csv # Delete the old file if it exists
+	touch lab2_add.csv # Create a new lab2_add.csv file
 
-	# Perform tests for each of the synchronization methods with the yield option
-
-	for num_threads in 2 4 8 12 ; do \
-		number=1 ; while [[ $$number -le 10 ]] ; do \
-			./lab2_add --iterations=1000 --threads=$$num_threads --yield --sync=m ; \
-			((number = number + 1)) ; \
-		done \
-	done
-
-
+	chmod +x test_script.sh # TODO: Check if needed
+	./test_script.sh
 
 graphs:
 	gnuplot lab2_add.gp 

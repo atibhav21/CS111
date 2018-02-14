@@ -72,36 +72,3 @@ int SortedList_length(SortedList_t *list)
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

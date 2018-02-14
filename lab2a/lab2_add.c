@@ -25,7 +25,7 @@ pthread_mutex_t lock;
 
 void printUsageMessage()
 {
-	fprintf(stderr, "usage: ./lab2_add.c [--threads=num] [--iterations=num]\n");
+	fprintf(stderr, "usage: ./lab2_add [--threads=num] [--iterations=num]\n");
 }
 
 void exitError()
@@ -54,8 +54,14 @@ void add(long long *pointer, long long value) {
 	*pointer = sum;
 }
 
-void add_compare_swap(long long *pointer, long long value) {
-
+void cas_add(long long *ptr, long long value) {
+	long long prev, newval;
+	do {
+		prev = *ptr;
+		newval = prev + value;
+		if(opt_yield)
+			sched_yield();
+	} while(__sync_val_compare_and_swap(ptr, prev, newval) != prev);
 }
 
 void* addNumIterations(void* num_iterations)
@@ -81,6 +87,7 @@ void* addNumIterations(void* num_iterations)
 						break;
 			case COMPARE_AND_SWAP:
 						// TODO
+						cas_add(&counter, 1);
 						break;	
 			default:
 				exitError();
@@ -104,6 +111,7 @@ void* addNumIterations(void* num_iterations)
 						break;
 			case COMPARE_AND_SWAP:
 						// TODO
+						cas_add(&counter, -1);
 						break;
 			default:
 				 exitError();
