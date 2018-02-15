@@ -1,3 +1,8 @@
+// NAME: Atibhav Mittal
+// EMAIL: atibhav.mittal6@gmail.com
+// ID: 804598987
+
+
 #include "SortedList.h"
 #include <stdlib.h>
 #include <string.h>
@@ -6,11 +11,11 @@
 void SortedList_insert(SortedList_t *list, SortedListElement_t *element)
 {
 	SortedListElement_t* iterator = list->next;
-	while(iterator != list && strcmp(iterator-> key, element-> key) <= 0)
+	while(iterator != list && strcmp(iterator-> key, element-> key) < 0)
 	{
 		// Start of Critical Section
-		if((opt_yield & INSERT_YIELD) != 0)
-			sched_yield();
+		/*if((opt_yield & INSERT_YIELD) != 0)
+			sched_yield();*/
 		iterator = iterator->next;
 		// End of critical section
 	}
@@ -29,6 +34,10 @@ void SortedList_insert(SortedList_t *list, SortedListElement_t *element)
 
 int SortedList_delete( SortedListElement_t *element)
 {
+	if(element == NULL)
+	{
+		return 1;
+	}
 	if(element->prev->next == element && element->next->prev == element)
 	{
 		// everything fine so delete the element
@@ -75,9 +84,10 @@ int SortedList_length(SortedList_t *list)
 			// corrupted list
 			return -1;
 		}
+		count++;
 		if((opt_yield & LOOKUP_YIELD) != 0)
 			sched_yield();
-		count += 1;
+		
 		iterator = iterator -> next;
 	}
 	return count;

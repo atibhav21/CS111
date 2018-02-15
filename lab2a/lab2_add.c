@@ -1,3 +1,7 @@
+// NAME: Atibhav Mittal
+// EMAIL: atibhav.mittal6@gmail.com
+// ID: 804598987
+
 #include <stdio.h>
 #include <getopt.h>
 #include <time.h>
@@ -22,6 +26,7 @@ int lock_type = NO_LOCK;
 int opt_yield = FALSE;
 
 pthread_mutex_t lock;
+int spin_lock_flag = FALSE;
 
 void printUsageMessage()
 {
@@ -81,9 +86,9 @@ void* addNumIterations(void* num_iterations)
 						pthread_mutex_unlock(&lock);
 						break;
 			case SPIN_LOCK:
-						while(__sync_lock_test_and_set(&counter, 1)); // spin
+						while(__sync_lock_test_and_set(&spin_lock_flag, 1)); // spin
 						add(&counter, 1); // change counter
-						__sync_lock_release(&counter); // release the lock
+						__sync_lock_release(&spin_lock_flag); // release the lock
 						break;
 			case COMPARE_AND_SWAP:
 						// TODO
@@ -105,9 +110,9 @@ void* addNumIterations(void* num_iterations)
 						pthread_mutex_unlock(&lock);
 						break;
 			case SPIN_LOCK:
-						while(__sync_lock_test_and_set(&counter, 1));
+						while(__sync_lock_test_and_set(&spin_lock_flag, 1));
 						add(&counter, -1);
-						__sync_lock_release(&counter);
+						__sync_lock_release(&spin_lock_flag);
 						break;
 			case COMPARE_AND_SWAP:
 						// TODO
@@ -243,7 +248,11 @@ int main(int argc, char *argv[])
 
 	free(threads);
 
-	printResult(test_name, num_threads, num_iterations, (long long) end.tv_nsec - start.tv_nsec);
+	long long my_elapsed_time_in_ns = (end.tv_sec - start.tv_sec) * 1000000000 ;
+	my_elapsed_time_in_ns += end.tv_nsec;
+	my_elapsed_time_in_ns -= start.tv_nsec;
+
+	printResult(test_name, num_threads, num_iterations, my_elapsed_time_in_ns);
 
 	return 0;
 }
