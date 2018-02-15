@@ -17,4 +17,76 @@ total time measurement for the lab2_add program, which leads to a skewed per ope
 when the yield option is enabled.
 
 2.1.3
+The average cost per iteration drops with increasing iterations because the threads share
+thread creation time. 
+The "correct cost" would be the value that this function asymptotically approaches. At that
+point, the cost would just be the cost of performing the operation (addition in this case).
 
+2.1.4
+All the operations perform similar for low number of threads because the operations will
+be performed in the correct order in the sense that there would be very few race conditions.
+This is because for low number of threads, the synchronization mechanisms barely affect the 
+execution of the program, and hence all the operations perform similar.
+The three protected operations perform slower as the number of threads increase due to synchronization.
+Each of those threads is trying to acquire the lock to the particular resource. In the case
+that they don't acquire the lock, they don't yield and end up using their entire time slice,
+hence slowing down operations.
+
+2.2.1
+The time per operation in mutex-protections operations in the second part (list) is lesser
+than than first part (add). For the list, it is about 10ns per operation whereas for the 
+add it is over 500ns per operation. 
+Both the graphs have a similar shape where it first increases (up to 2 threads) and then 
+decreases after. This shape is due to the fact that for larger number of threads, the cost
+per operations is amortized. The threads end up sharing thread creation time (for larger
+number of threads), and hence the cost per operation becomes lower.
+The slope is sharper for the lists because the insert and lookup operations take up O(n)
+time whereas for adds, the operations take O(1) time. Hence, more operations are being 
+performed in lists and thus the slope is sharper.
+
+2.2.2
+The time per iteration for the list increase for both the spin lock and mutex lock.
+The time per iteration for spin locks is higher than the time per iteration for the mutex lock.
+The spin locks cost keeps increasing as compared to the mutex lock, because for mutexes, 
+if a thread doesn't acquire the lock, it goes to sleep. When we have a large number of threads,
+the cost per operation becomes lower since threads just go to sleep. However, for lower number of
+threads, the cost is dominated by waking up threads, which is an expensive operation.
+The slopes for increases and decreases is sharper for spin locks than mutexes. 
+
+
+
+Files Included in the Tarball:
+
+lab2_add.c: Source file containing the code for performing multithreaded updates to a counter.
+			Supports options like --threads=num, --iterations=num, --yield, and --sync=[m/c/s]
+			(m- mutex, c - compare and swap, s - spin lock)
+
+lab2_list.c: Source file containing code for multithreaded updates to a circular doubly linked
+			list with a dummy node. Supports options like --threads=num, --iterations=num, 
+			--yield=[idl] (yield insert/yield delete/yield lookup) , and --sync=[m/s]
+
+SortedList.h: Interface for the Doubly linked list
+
+SortedList.c: Contains definition of the functions defined by the interface, and performs yielding
+			based on the opt_yield defined in lab2_list.c
+
+lab2-add-*.png: Graphs produced from the test data for the add operation
+
+lab2-list-*.png: Graphs produced from test data for the linked list operations
+
+lab2_add.csv: Data used to plot the above graphs for add
+
+lab2_list.csv: Data used to plot the above graphs for linked list
+
+lab2_add.gp: Data reduction script that plots the graphs from the lab2_add.csv file
+
+lab2_list.gp: Data reduction script that plots the graphs from the lab2_list.csv file
+
+README: Contains answers to questions posted and information the files included in the tarball
+
+Makefile: Makefile based on the GNU make utility. Supports targets like:
+		build: Builds the executable programs
+		clean: Removes all files created be the make command
+		dist: Creates the Tarball
+		tests: Runs the 200+ tests and stores the results in CSV files
+		graphs: Generates graphs from the CSV files
