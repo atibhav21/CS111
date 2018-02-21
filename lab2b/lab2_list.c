@@ -71,6 +71,11 @@ unsigned long hash(const char* str)
 void freePointersAndExit()
 {
 	fprintf(stderr, "Corrupted List\n");
+	int i;
+	for(i= 0; i < number_of_elements; i+= 1)
+	{
+		free((void*) elements[i].key);
+	}
 	free(total_thread_wait_time);
 	free(threads);
 	free(list);
@@ -278,7 +283,7 @@ void* threadStuff(void* arg)
 					}
 					for(i = 0; i < num_lists; i+= 1)
 					{
-						list_length = SortedList_length(list_to_work_with);
+						list_length += SortedList_length(list_to_work_with);
 						__sync_lock_release(&spin_lock_flags[i]); // release the lock
 					}
 					
@@ -293,7 +298,7 @@ void* threadStuff(void* arg)
 	//fprintf(stderr, "List Length: %d\n", list_length);
 	//fprintf(stderr, "Num_Iterations: %d\n", num_iterations);
 
-	if(list_length == -1)
+	if(list_length <= -1)
 	{
 		free(arg);	
 		freePointersAndExit();
