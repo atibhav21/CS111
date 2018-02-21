@@ -1,0 +1,506 @@
+Total: 1387 samples
+    1222  88.1%  88.1%     1371  98.8% threadStuff
+     116   8.4%  96.5%      116   8.4% __strcmp_sse42
+      16   1.2%  97.6%       83   6.0% SortedList_lookup
+       9   0.6%  98.3%       61   4.4% SortedList_insert
+       8   0.6%  98.8%       16   1.2% generateRandomKey
+       4   0.3%  99.1%        4   0.3% hash
+       3   0.2%  99.4%        5   0.4% __random
+       3   0.2%  99.6%        3   0.2% _init
+       3   0.2%  99.8%        8   0.6% rand
+       2   0.1%  99.9%        2   0.1% __random_r
+       1   0.1% 100.0%        1   0.1% 0x00007ffee8bde7da
+       0   0.0% 100.0%        1   0.1% __GI___clock_gettime
+       0   0.0% 100.0%     1371  98.8% __clone
+       0   0.0% 100.0%       16   1.2% __libc_start_main
+       0   0.0% 100.0%       16   1.2% _start
+       0   0.0% 100.0%       16   1.2% main
+       0   0.0% 100.0%     1371  98.8% start_thread
+ROUTINE ====================== threadStuff in /u/cs/ugrad/atibhav/CS111/lab2b/lab2_list.c
+  1222   1371 Total samples (flat / cumulative)
+     .      .  151: 	freePointersAndExit();
+     .      .  152: 	exit(2);
+     .      .  153: }
+     .      .  154: 
+     .      .  155: void* threadStuff(void* arg)
+---
+     .      .  156: {
+     .      .  157: 	struct thread_info t = *((struct thread_info*) arg);
+     .      .  158: 
+     .      .  159: 	// perform the required computations
+     .      .  160: 	//SortedList_t* list = t.list;
+     .      .  161: 	int num_iterations = t.num_iterations;
+     .      .  162: 	SortedListElement_t* elements = t.m_elements;
+     .      .  163: 	int thread_num = t.thread_num;
+     .      .  164: 
+     .      .  165: 	//printf("Lock ID: %d\n", lock_type);
+     .      .  166: 
+     .      .  167: 	long long thread_time_in_ns = 0;
+     .      .  168: 	struct timespec start,end;
+     .      .  169: 
+     .      .  170: 	SortedList_t* list_to_work_with = NULL;
+     .      .  171: 
+     .      .  172: 	int i = 0;
+     .      .  173: 	for(i=0; i<num_iterations; i+= 1)
+     .      .  174: 	{	
+     .      2  175: 		int list_index = (int) (hash(elements[i].key) % num_lists);
+     .      .  176: 		list_to_work_with = &list[list_index];
+     .      .  177: 		switch(lock_type)
+     .      .  178: 		{
+     .      .  179: 			case NO_LOCK: SortedList_insert(list_to_work_with, &elements[i]);
+     .      .  180: 						break;
+     .      .  181: 			case MUTEX: //printf("Mutex section\n");
+     .      .  182: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  183: 						{
+     .      .  184: 							printError();
+     .      .  185: 							freePointersAndExit();
+     .      .  186: 						}
+     .      .  187: 						pthread_mutex_lock(&locks[list_index]);
+     .      .  188: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  189: 						{
+     .      .  190: 							pthread_mutex_unlock(&locks[list_index]);
+     .      .  191: 							printError();
+     .      .  192: 							freePointersAndExit();
+     .      .  193: 						}
+     .      .  194: 						SortedList_insert(list_to_work_with, &elements[i]);
+     .      .  195: 						pthread_mutex_unlock(&locks[list_index]);
+     .      .  196: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  197: 						thread_time_in_ns += end.tv_nsec;
+     .      .  198: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  199: 						break;
+     .      .  200: 			case SPIN_LOCK: 
+     .      .  201: 						//TODO: 
+     .      .  202: 						//printf("Spin Lock\n");
+     .      .  203: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  204: 						{
+     .      .  205: 							printError();
+     .      .  206: 							freePointersAndExit();
+     .      .  207: 						}
+   616    616  208: 						while(__sync_lock_test_and_set(&spin_lock_flags[list_index], 1)); // spin
+     .      .  209: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  210: 						{
+     .      .  211: 							__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  212: 							printError();
+     .      .  213: 							freePointersAndExit();
+     .      .  214: 						}
+     .     61  215: 						SortedList_insert(list_to_work_with, &elements[i]);
+     .      .  216: 						__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  217: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  218: 						thread_time_in_ns += end.tv_nsec;
+     .      .  219: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  220: 						break;
+     .      .  221: 		}
+     .      .  222: 		
+     .      .  223: 	}
+     .      .  224: 
+     .      .  225: 
+     .      .  226: 	// TODO: CHANGE THE LOCK IMPLEMENTATIONS TO TRY AND ACQUIRE ALL THE LOCKS!!
+     .      .  227: 	int list_length = 0;
+     .      .  228: 	//int i;
+     .      .  229: 	switch(lock_type)
+     .      .  230: 	{
+     .      .  231: 		case NO_LOCK: 
+     .      .  232: 					for(i = 0; i < num_lists; i += 1)
+     .      .  233: 					{
+     .      .  234: 						list_length += SortedList_length(&list[i]);
+     .      .  235: 					}
+     .      .  236: 					//list_length = SortedList_length(list_to_work_with);
+     .      .  237: 					break;
+     .      .  238: 		case MUTEX: 
+     .      .  239: 					for(i = 0; i < num_lists; i += 1)
+     .      .  240: 					{
+     .      .  241: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  242: 						{
+     .      .  243: 							printError();
+     .      .  244: 							freePointersAndExit();
+     .      .  245: 						}
+     .      .  246: 						pthread_mutex_lock(&locks[i]);
+     .      .  247: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  248: 						{
+     .      .  249: 							pthread_mutex_unlock(&locks[i]);
+     .      .  250: 							printError();
+     .      .  251: 							freePointersAndExit();
+     .      .  252: 						}
+     .      .  253: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  254: 						thread_time_in_ns += end.tv_nsec;
+     .      .  255: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  256: 					}
+     .      .  257: 					for(i = 0; i < num_lists; i += 1)
+     .      .  258: 					{
+     .      .  259: 						list_length += SortedList_length(&list[i]);
+     .      .  260: 						pthread_mutex_unlock(&locks[i]);
+     .      .  261: 					}
+     .      .  262: 					
+     .      .  263: 					break;
+     .      .  264: 		case SPIN_LOCK: 
+     .      .  265: 					//TODO: 
+     .      .  266: 					for(i = 0; i < num_lists; i += 1)
+     .      .  267: 					{
+     .      .  268: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  269: 						{
+     .      .  270: 							printError();
+     .      .  271: 							freePointersAndExit();
+     .      .  272: 						}
+     1      1  273: 						while(__sync_lock_test_and_set(&spin_lock_flags[i], 1)); // spin
+     .      .  274: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  275: 						{
+     .      .  276: 							__sync_lock_release(&spin_lock_flags[i]); // release the lock
+     .      .  277: 							printError();
+     .      .  278: 							freePointersAndExit();
+     .      .  279: 						}
+     .      .  280: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  281: 						thread_time_in_ns += end.tv_nsec;
+     .      .  282: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  283: 					}
+     .      .  284: 					for(i = 0; i < num_lists; i+= 1)
+     .      .  285: 					{
+     .      .  286: 						list_length += SortedList_length(list_to_work_with);
+     .      .  287: 						__sync_lock_release(&spin_lock_flags[i]); // release the lock
+     .      .  288: 					}
+     .      .  289: 					
+     .      .  290: 
+     .      .  291: 					
+     .      .  292: 					break;
+     .      .  293: 	}
+     .      .  294: 
+     .      .  295: 
+     .      .  296: 
+     .      .  297: 
+     .      .  298: 	//fprintf(stderr, "List Length: %d\n", list_length);
+     .      .  299: 	//fprintf(stderr, "Num_Iterations: %d\n", num_iterations);
+     .      .  300: 
+     .      .  301: 	if(list_length <= -1)
+     .      .  302: 	{
+     .      .  303: 		free(arg);	
+     .      .  304: 		freePointersAndExit();
+     .      .  305: 	}
+     .      .  306: 
+     .      .  307: 	for(i=0; i<num_iterations; i+=1)
+     .      .  308: 	{
+     .      .  309: 		SortedListElement_t* m_elemt;
+     .      2  310: 		int list_index = (int) (hash(elements[i].key) % num_lists);
+     .      .  311: 		list_to_work_with = &list[list_index];
+     .      .  312: 		switch(lock_type)
+     .      .  313: 		{
+     .      .  314: 			case NO_LOCK: m_elemt = SortedList_lookup(list_to_work_with, elements[i].key);
+     .      .  315: 						if(SortedList_delete(m_elemt) == 1)
+     .      .  316: 							{
+     .      .  317: 								// list has been corrupted
+     .      .  318: 								//fprintf(stderr, "Corrupted List, Do something 2\n");
+     .      .  319: 								free(arg);
+     .      .  320: 								freePointersAndExit();
+     .      .  321: 								
+     .      .  322: 							}
+     .      .  323: 						break;
+     .      .  324: 			case MUTEX: 
+     .      .  325: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  326: 						{
+     .      .  327: 							printError();
+     .      .  328: 							freePointersAndExit();
+     .      .  329: 						}
+     .      .  330: 						pthread_mutex_lock(&locks[list_index]);
+     .      .  331: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  332: 						{
+     .      .  333: 							pthread_mutex_unlock(&locks[list_index]);
+     .      .  334: 							printError();
+     .      .  335: 							freePointersAndExit();
+     .      .  336: 						}
+     .      .  337: 						m_elemt = SortedList_lookup(list_to_work_with, elements[i].key);
+     .      .  338: 						if(SortedList_delete(m_elemt) == 1)
+     .      .  339: 						{
+     .      .  340: 							// list has been corrupted
+     .      .  341: 							//fprintf(stderr, "Corrupted List, Do something 3\n");
+     .      .  342: 							free(arg);
+     .      .  343: 							freePointersAndExit();
+     .      .  344: 						}	
+     .      .  345: 						pthread_mutex_unlock(&locks[list_index]);
+     .      .  346: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  347: 						thread_time_in_ns += end.tv_nsec;
+     .      .  348: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  349: 						break;
+     .      .  350: 			case SPIN_LOCK: 
+     .      .  351: 						//TODO: 
+     .      .  352: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  353: 						{
+     .      .  354: 							printError();
+     .      .  355: 							freePointersAndExit();
+     .      .  356: 						}
+   605    605  357: 						while(__sync_lock_test_and_set(&spin_lock_flags[list_index], 1)); // spin
+     .      1  358: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  359: 						{
+     .      .  360: 							__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  361: 							printError();
+     .      .  362: 							freePointersAndExit();
+     .      .  363: 						}
+     .     83  364: 						m_elemt = SortedList_lookup(list_to_work_with, elements[i].key);
+     .      .  365: 						if(SortedList_delete(m_elemt) == 1)
+     .      .  366: 						{
+     .      .  367: 							// list has been corrupted
+     .      .  368: 							//fprintf(stderr, "Corrupted List, Do something 4\n");
+     .      .  369: 							free(arg);
+     .      .  370: 							freePointersAndExit();
+     .      .  371: 						}
+     .      .  372: 						__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  373: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  374: 						thread_time_in_ns += end.tv_nsec;
+     .      .  375: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  376: 						break;
+     .      .  377: 		}
+     .      .  378: 
+     .      .  379: 		
+     .      .  380: 	}
+     .      .  381: 	total_thread_wait_time[thread_num] = thread_time_in_ns;
+     .      .  382: 
+     .      .  383: 	free(arg);
+     .      .  384: 	return NULL;
+     .      .  385: }
+---
+     .      .  386: 
+     .      .  387: void printResult(char* test_name, int threads, int iterations, int num_lists, long long time, long long wait_time)
+     .      .  388: {
+     .      .  389: 	int num_operations = threads * iterations * 3;
+     .      .  390: 	printf("%s,%d,%d,%d,%d,%llu,%llu,%llu\n", test_name, threads, iterations, num_lists, num_operations, time, time/num_operations, wait_time);
+ROUTINE ====================== threadStuff in /u/cs/ugrad/atibhav/CS111/lab2b/lab2_list.c
+  1222   1371 Total samples (flat / cumulative)
+     .      .  151: 	freePointersAndExit();
+     .      .  152: 	exit(2);
+     .      .  153: }
+     .      .  154: 
+     .      .  155: void* threadStuff(void* arg)
+---
+     .      .  156: {
+     .      .  157: 	struct thread_info t = *((struct thread_info*) arg);
+     .      .  158: 
+     .      .  159: 	// perform the required computations
+     .      .  160: 	//SortedList_t* list = t.list;
+     .      .  161: 	int num_iterations = t.num_iterations;
+     .      .  162: 	SortedListElement_t* elements = t.m_elements;
+     .      .  163: 	int thread_num = t.thread_num;
+     .      .  164: 
+     .      .  165: 	//printf("Lock ID: %d\n", lock_type);
+     .      .  166: 
+     .      .  167: 	long long thread_time_in_ns = 0;
+     .      .  168: 	struct timespec start,end;
+     .      .  169: 
+     .      .  170: 	SortedList_t* list_to_work_with = NULL;
+     .      .  171: 
+     .      .  172: 	int i = 0;
+     .      .  173: 	for(i=0; i<num_iterations; i+= 1)
+     .      .  174: 	{	
+     .      2  175: 		int list_index = (int) (hash(elements[i].key) % num_lists);
+     .      .  176: 		list_to_work_with = &list[list_index];
+     .      .  177: 		switch(lock_type)
+     .      .  178: 		{
+     .      .  179: 			case NO_LOCK: SortedList_insert(list_to_work_with, &elements[i]);
+     .      .  180: 						break;
+     .      .  181: 			case MUTEX: //printf("Mutex section\n");
+     .      .  182: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  183: 						{
+     .      .  184: 							printError();
+     .      .  185: 							freePointersAndExit();
+     .      .  186: 						}
+     .      .  187: 						pthread_mutex_lock(&locks[list_index]);
+     .      .  188: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  189: 						{
+     .      .  190: 							pthread_mutex_unlock(&locks[list_index]);
+     .      .  191: 							printError();
+     .      .  192: 							freePointersAndExit();
+     .      .  193: 						}
+     .      .  194: 						SortedList_insert(list_to_work_with, &elements[i]);
+     .      .  195: 						pthread_mutex_unlock(&locks[list_index]);
+     .      .  196: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  197: 						thread_time_in_ns += end.tv_nsec;
+     .      .  198: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  199: 						break;
+     .      .  200: 			case SPIN_LOCK: 
+     .      .  201: 						//TODO: 
+     .      .  202: 						//printf("Spin Lock\n");
+     .      .  203: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  204: 						{
+     .      .  205: 							printError();
+     .      .  206: 							freePointersAndExit();
+     .      .  207: 						}
+   616    616  208: 						while(__sync_lock_test_and_set(&spin_lock_flags[list_index], 1)); // spin
+     .      .  209: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  210: 						{
+     .      .  211: 							__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  212: 							printError();
+     .      .  213: 							freePointersAndExit();
+     .      .  214: 						}
+     .     61  215: 						SortedList_insert(list_to_work_with, &elements[i]);
+     .      .  216: 						__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  217: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  218: 						thread_time_in_ns += end.tv_nsec;
+     .      .  219: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  220: 						break;
+     .      .  221: 		}
+     .      .  222: 		
+     .      .  223: 	}
+     .      .  224: 
+     .      .  225: 
+     .      .  226: 	// TODO: CHANGE THE LOCK IMPLEMENTATIONS TO TRY AND ACQUIRE ALL THE LOCKS!!
+     .      .  227: 	int list_length = 0;
+     .      .  228: 	//int i;
+     .      .  229: 	switch(lock_type)
+     .      .  230: 	{
+     .      .  231: 		case NO_LOCK: 
+     .      .  232: 					for(i = 0; i < num_lists; i += 1)
+     .      .  233: 					{
+     .      .  234: 						list_length += SortedList_length(&list[i]);
+     .      .  235: 					}
+     .      .  236: 					//list_length = SortedList_length(list_to_work_with);
+     .      .  237: 					break;
+     .      .  238: 		case MUTEX: 
+     .      .  239: 					for(i = 0; i < num_lists; i += 1)
+     .      .  240: 					{
+     .      .  241: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  242: 						{
+     .      .  243: 							printError();
+     .      .  244: 							freePointersAndExit();
+     .      .  245: 						}
+     .      .  246: 						pthread_mutex_lock(&locks[i]);
+     .      .  247: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  248: 						{
+     .      .  249: 							pthread_mutex_unlock(&locks[i]);
+     .      .  250: 							printError();
+     .      .  251: 							freePointersAndExit();
+     .      .  252: 						}
+     .      .  253: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  254: 						thread_time_in_ns += end.tv_nsec;
+     .      .  255: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  256: 					}
+     .      .  257: 					for(i = 0; i < num_lists; i += 1)
+     .      .  258: 					{
+     .      .  259: 						list_length += SortedList_length(&list[i]);
+     .      .  260: 						pthread_mutex_unlock(&locks[i]);
+     .      .  261: 					}
+     .      .  262: 					
+     .      .  263: 					break;
+     .      .  264: 		case SPIN_LOCK: 
+     .      .  265: 					//TODO: 
+     .      .  266: 					for(i = 0; i < num_lists; i += 1)
+     .      .  267: 					{
+     .      .  268: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  269: 						{
+     .      .  270: 							printError();
+     .      .  271: 							freePointersAndExit();
+     .      .  272: 						}
+     1      1  273: 						while(__sync_lock_test_and_set(&spin_lock_flags[i], 1)); // spin
+     .      .  274: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  275: 						{
+     .      .  276: 							__sync_lock_release(&spin_lock_flags[i]); // release the lock
+     .      .  277: 							printError();
+     .      .  278: 							freePointersAndExit();
+     .      .  279: 						}
+     .      .  280: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  281: 						thread_time_in_ns += end.tv_nsec;
+     .      .  282: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  283: 					}
+     .      .  284: 					for(i = 0; i < num_lists; i+= 1)
+     .      .  285: 					{
+     .      .  286: 						list_length += SortedList_length(list_to_work_with);
+     .      .  287: 						__sync_lock_release(&spin_lock_flags[i]); // release the lock
+     .      .  288: 					}
+     .      .  289: 					
+     .      .  290: 
+     .      .  291: 					
+     .      .  292: 					break;
+     .      .  293: 	}
+     .      .  294: 
+     .      .  295: 
+     .      .  296: 
+     .      .  297: 
+     .      .  298: 	//fprintf(stderr, "List Length: %d\n", list_length);
+     .      .  299: 	//fprintf(stderr, "Num_Iterations: %d\n", num_iterations);
+     .      .  300: 
+     .      .  301: 	if(list_length <= -1)
+     .      .  302: 	{
+     .      .  303: 		free(arg);	
+     .      .  304: 		freePointersAndExit();
+     .      .  305: 	}
+     .      .  306: 
+     .      .  307: 	for(i=0; i<num_iterations; i+=1)
+     .      .  308: 	{
+     .      .  309: 		SortedListElement_t* m_elemt;
+     .      2  310: 		int list_index = (int) (hash(elements[i].key) % num_lists);
+     .      .  311: 		list_to_work_with = &list[list_index];
+     .      .  312: 		switch(lock_type)
+     .      .  313: 		{
+     .      .  314: 			case NO_LOCK: m_elemt = SortedList_lookup(list_to_work_with, elements[i].key);
+     .      .  315: 						if(SortedList_delete(m_elemt) == 1)
+     .      .  316: 							{
+     .      .  317: 								// list has been corrupted
+     .      .  318: 								//fprintf(stderr, "Corrupted List, Do something 2\n");
+     .      .  319: 								free(arg);
+     .      .  320: 								freePointersAndExit();
+     .      .  321: 								
+     .      .  322: 							}
+     .      .  323: 						break;
+     .      .  324: 			case MUTEX: 
+     .      .  325: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  326: 						{
+     .      .  327: 							printError();
+     .      .  328: 							freePointersAndExit();
+     .      .  329: 						}
+     .      .  330: 						pthread_mutex_lock(&locks[list_index]);
+     .      .  331: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  332: 						{
+     .      .  333: 							pthread_mutex_unlock(&locks[list_index]);
+     .      .  334: 							printError();
+     .      .  335: 							freePointersAndExit();
+     .      .  336: 						}
+     .      .  337: 						m_elemt = SortedList_lookup(list_to_work_with, elements[i].key);
+     .      .  338: 						if(SortedList_delete(m_elemt) == 1)
+     .      .  339: 						{
+     .      .  340: 							// list has been corrupted
+     .      .  341: 							//fprintf(stderr, "Corrupted List, Do something 3\n");
+     .      .  342: 							free(arg);
+     .      .  343: 							freePointersAndExit();
+     .      .  344: 						}	
+     .      .  345: 						pthread_mutex_unlock(&locks[list_index]);
+     .      .  346: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  347: 						thread_time_in_ns += end.tv_nsec;
+     .      .  348: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  349: 						break;
+     .      .  350: 			case SPIN_LOCK: 
+     .      .  351: 						//TODO: 
+     .      .  352: 						if(clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+     .      .  353: 						{
+     .      .  354: 							printError();
+     .      .  355: 							freePointersAndExit();
+     .      .  356: 						}
+   605    605  357: 						while(__sync_lock_test_and_set(&spin_lock_flags[list_index], 1)); // spin
+     .      1  358: 						if(clock_gettime(CLOCK_MONOTONIC, &end) != 0)
+     .      .  359: 						{
+     .      .  360: 							__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  361: 							printError();
+     .      .  362: 							freePointersAndExit();
+     .      .  363: 						}
+     .     83  364: 						m_elemt = SortedList_lookup(list_to_work_with, elements[i].key);
+     .      .  365: 						if(SortedList_delete(m_elemt) == 1)
+     .      .  366: 						{
+     .      .  367: 							// list has been corrupted
+     .      .  368: 							//fprintf(stderr, "Corrupted List, Do something 4\n");
+     .      .  369: 							free(arg);
+     .      .  370: 							freePointersAndExit();
+     .      .  371: 						}
+     .      .  372: 						__sync_lock_release(&spin_lock_flags[list_index]); // release the lock
+     .      .  373: 						thread_time_in_ns += (end.tv_sec - start.tv_sec) * 1000000000 ;
+     .      .  374: 						thread_time_in_ns += end.tv_nsec;
+     .      .  375: 						thread_time_in_ns -= start.tv_nsec;
+     .      .  376: 						break;
+     .      .  377: 		}
+     .      .  378: 
+     .      .  379: 		
+     .      .  380: 	}
+     .      .  381: 	total_thread_wait_time[thread_num] = thread_time_in_ns;
+     .      .  382: 
+     .      .  383: 	free(arg);
+     .      .  384: 	return NULL;
+     .      .  385: }
+---
+     .      .  386: 
+     .      .  387: void printResult(char* test_name, int threads, int iterations, int num_lists, long long time, long long wait_time)
+     .      .  388: {
+     .      .  389: 	int num_operations = threads * iterations * 3;
+     .      .  390: 	printf("%s,%d,%d,%d,%d,%llu,%llu,%llu\n", test_name, threads, iterations, num_lists, num_operations, time, time/num_operations, wait_time);
