@@ -1,3 +1,7 @@
+// NAME: Atibhav Mittal
+// EMAIL: atibhav.mittal6@gmail.com
+// ID: 804598987
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
@@ -175,8 +179,8 @@ void processCommand()
 				getSubstr(buffered_string, substring, 0, 6);
 				if(strcmp(substring, "PERIOD") == 0)
 				{
-					int j = 8;
-					int new_period;
+					int j = 7;
+					int new_period = 0;
 					// start processing from the 8th character to get the number for period
 					while(buffered_string[j] != '\0')
 					{
@@ -194,6 +198,7 @@ void processCommand()
 							exitError();
 						}
 					}
+					
 					period = new_period;
 				}
 			}
@@ -263,7 +268,7 @@ int main(int argc, char *argv[])
 					break;
 			case 'l': 
 					logging_enabled = 1;
-					logfile_fd = open(optarg, O_CREAT | O_WRONLY, S_IRWXU);
+					logfile_fd = open(optarg, O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
 					if(logfile_fd < 0) {
 						exitError();
 					}
@@ -290,6 +295,19 @@ int main(int argc, char *argv[])
 	{
 		poll_result = poll(&stdin_poll, 1, 0);
 
+		if(reports_enabled && clock.tv_sec >= next_report_due)
+		{
+			now = localtime(&(clock.tv_sec));
+			float temperature = readTemp();
+			snprintf(stdout_buffer, sizeof(stdout_buffer), "%02d:%02d:%02d %.1f\n", now->tm_hour, now->tm_min, now->tm_sec, temperature);
+
+			write(STDOUT_FILENO, stdout_buffer, strlen(stdout_buffer));
+			if(logging_enabled){
+				write(logfile_fd, stdout_buffer, strlen(stdout_buffer));
+			}
+			next_report_due = clock.tv_sec + period;
+		}
+
 		if(poll_result > 0)
 		{
 			if(stdin_poll.revents & POLLIN)
@@ -314,18 +332,7 @@ int main(int argc, char *argv[])
 
 		gettimeofday(&clock, 0);
 
-		if(reports_enabled && clock.tv_sec >= next_report_due)
-		{
-			now = localtime(&(clock.tv_sec));
-			float temperature = readTemp();
-			snprintf(stdout_buffer, sizeof(stdout_buffer), "%02d:%02d:%02d %.1f\n", now->tm_hour, now->tm_min, now->tm_sec, temperature);
-
-			write(STDOUT_FILENO, stdout_buffer, strlen(stdout_buffer));
-			if(logging_enabled){
-				write(logfile_fd, stdout_buffer, strlen(stdout_buffer));
-			}
-			next_report_due = clock.tv_sec + period;
-		}
+		
 
 		if(mraa_gpio_read(button) == 1)
 		{
