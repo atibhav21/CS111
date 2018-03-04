@@ -39,6 +39,7 @@ void superBlock(int fd)
 	// read the ext2_super_block from fd 
 	if(pread(fd, (void*) superblock_pointer, sizeof(struct ext2_super_block), 1024) < 0) // read the superblock from the fd
 	{
+		free(superblock_pointer);
 		printErrorAndExit();
 	}
 
@@ -54,6 +55,120 @@ void superBlock(int fd)
 	printf("SUPERBLOCK,%d,%d,%d,%d,%d,%d,%d\n", numofblock, inode_count, blocksize, inode_size, blockpergroup, inodepergroup, first_ino);
 
 	free(superblock_pointer);
+}
+
+int printFreeBlocks(int fd, uint32_t block_bitmap, uint32_t blocks_in_group, uint32_t group_num)
+{
+	void* m_block = malloc(blocksize);
+	if(pread(fd, m_block, blocksize, block_bitmap * blocksize) < 0)
+	{
+		free(m_block);
+		return 1;
+	}
+	uint32_t bit_num;
+	for(bit_num = 0; bit_num < blocks_in_group; bit_num += 1)
+	{
+		uint8_t byte_in_bitmap = ((uint8_t *) m_block)[bit_num/8];
+		if( ! (byte_in_bitmap & (1 << (bit_num % 8))))
+		{
+			printf("BFREE,%d\n", blockpergroup * group_num + bit_num + 1);
+		}
+	}
+
+	free(m_block);
+	return 0; // no errors occured
+}
+
+int printFreeInodes(int fd, uint32_t inode_bitmap, uint32_t group_num)
+{
+	void* m_block = malloc(blocksize);
+	if(pread(fd, m_block, blocksize, blocksize * inode_bitmap) < 0)
+	{
+		free(m_block);
+		return 1;
+	}
+
+	uint32_t bit_num;
+	for(bit_num = 0; bit_num < inodepergroup; bit_num += 1)
+	{
+		uint8_t byte_in_bitmap = ((uint8_t *) m_block)[bit_num/8];
+		if( ! (byte_in_bitmap & (1 << (bit_num % 8))))
+		{
+			printf("IFREE,%d\n", inodepergroup * group_num + bit_num + 1);
+		}
+	}
+
+	free(m_block);
+	return 0;
+}
+
+void groupSummary(int fd)
+{
+	//fprintf(stderr, "%d\n", sizeof(struct ext2_group_desc));
+	struct ext2_group_desc* group_desc = malloc(sizeof(struct ext2_group_desc));
+	uint32_t descriptor_blk_offset;
+
+	numofgroup = numofblock / blockpergroup;
+	if(blocksize == 1024)
+	{
+		descriptor_blk_offset = 2; // 3rd block on a 1 KiB block file system
+	}
+	else
+	{
+		descriptor_blk_offset = 1; // 2nd block for 2 KiB and larger block file systems
+	}
+
+	if(numofblock % blockpergroup != 0)
+	{
+		// additional group at the end with less than blockpergroup blocks
+		numofgroup += 1;
+	}
+
+	uint32_t i;
+	for(i = 0; i < numofgroup; i+= 1)
+	{	
+		uint32_t blocks_in_group = blockpergroup;
+
+		// use pread with the group_desc structure to read the info about the group descriptor table
+		if(pread(fd, (void*) group_desc, sizeof(struct ext2_group_desc), descriptor_blk_offset * blocksize + sizeof(struct ext2_group_desc) * i ) < 0)
+		{
+			free(group_desc);
+			printErrorAndExit();
+		}
+
+		if(i == numofgroup - 1)
+		{
+			// last block so it might have lesser number of blocks
+			blocks_in_group = numofblock - (blockpergroup * i);
+
+		}
+		// get information from the group_desc about this group
+		uint16_t num_free_blocks = group_desc->bg_free_blocks_count;
+		uint16_t num_free_inodes = group_desc->bg_free_inodes_count;
+		uint32_t free_block_bitmap = group_desc->bg_block_bitmap; // TODO: Figure out why this works
+		uint32_t free_inode_bitmap = group_desc->bg_inode_bitmap; // TODO: Figure out why this works
+		uint32_t first_block_inode = group_desc->bg_inode_table;
+
+
+		// write the group summary to stdout
+		printf("GROUP,%d,%d,%d,%d,%d,%d,%d,%d\n", i, blocks_in_group, inodepergroup, num_free_blocks, num_free_inodes, free_block_bitmap, free_inode_bitmap, first_block_inode);
+
+		// do something with the free blocks and stuff
+		if(printFreeBlocks(fd, free_block_bitmap, blocks_in_group, i) != 0)
+		{
+			free(group_desc);
+			printErrorAndExit();
+		}
+
+		if(printFreeInodes(fd, free_inode_bitmap, i) != 0)
+		{
+			free(group_desc);
+			printErrorAndExit();
+		}
+	}
+
+	
+	free(group_desc);
 }
 
 int main(int argc, char *argv[])
@@ -72,6 +187,6 @@ int main(int argc, char *argv[])
 	}
 
 	superBlock(img_fd);
-
+	groupSummary(img_fd);
 	return 0;
 }
