@@ -15,12 +15,11 @@ extern int errno;
 uint32_t numofblock = 0;
 uint32_t blocksize = 0;
 uint32_t blockpergroup = 0;
-uint32_t numofgroup = 0; // TODO: Figure out where to get this
+uint32_t numofgroup = 0; 
 uint32_t inodepergroup = 0;
 uint16_t inode_size = 0;
 
-uint32_t inode_count = 0; // TODO: Check if this can be moved to superblock function
-uint32_t first_ino = 0; // TODO: Check if this can be moved to superblock function
+
 
 void printUsage()
 {
@@ -29,13 +28,15 @@ void printUsage()
 
 void printErrorAndExit()
 {
-	fprintf(stderr, "An Error occured: %d\n", strerror(errno));
+	fprintf(stderr, "An Error occured: %s\n", strerror(errno));
 	exit(2);
 }
 
 void superBlock(int fd)
 {
 	struct ext2_super_block* superblock_pointer = malloc(sizeof(struct ext2_super_block));
+	uint32_t inode_count = 0;
+	uint32_t first_ino = 0; 
 
 	// read the ext2_super_block from fd 
 	if(pread(fd, (void*) superblock_pointer, sizeof(struct ext2_super_block), 1024) < 0) // read the superblock from the fd
@@ -122,7 +123,13 @@ char filetype(uint32_t filemode)
 
 }
 
-int indirectBlock(int fd, uint32_t inode_num, uint32_t block_num, int level)
+// Parameters
+// fd is the file descriptor for the img file
+// inode_num is the I-node number of the owning file
+// level of indirection for the block being scanned
+// 
+// block number of the indirect block being scanned
+int indirectBlock(int fd, uint32_t inode_num, int level, uint32_t block_num)
 {
 	void* block = malloc(blocksize);
 	if(pread(fd, block, blocksize, blocksize * block_num) < 0)
@@ -132,17 +139,35 @@ int indirectBlock(int fd, uint32_t inode_num, uint32_t block_num, int level)
 	}
 
 	uint16_t entry_num = 0;
-	uint32_t* iterator_pointer;
-	uint32_t i;
-	for(i = 0; i < blocksize / 4; i += 1)
+	void* ptr4;
+	uint16_t i;
+
+	for( i = 0; i < blocksize / 4; i += 1)
 	{
-		// go over each of these indexed entries and if entry is non-zero, print to stdout
-		iterator_pointer = block + i * 4;
-		if((*iterator_pointer) != 0)
+		ptr4 = block + (4 * i);
+		if(*((uint32_t*)ptr4) != 0)
 		{
-			//printf("Block Num Referenced: %d\n", blocksize/4);
-			printf("Non Zero something found for i=%d\n", i);
+			printf("INDIRECT,%d,%d,%d,%d,%d\n", inode_num, level, -1, block_num, *((uint32_t*)ptr4)); // TODO: Change the -1
 		}
+		entry_num += 1;
+	}
+
+	if(level > 0)
+	{
+		// recurse!!!!
+		for( i = 0; i < blocksize / 4; i += 1)
+		{
+			ptr4 = block + (4 * i);
+			if(*((uint32_t*)ptr4) != 0)
+			{
+				if(indirectBlock(fd, inode_num, level-1, *((uint32_t*)ptr4)) != 0)
+				{
+					free(block);
+					return 1;
+				}
+			}
+		}
+
 	}
 
 	free(block);
@@ -176,16 +201,14 @@ int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
 		iterator += dir->rec_len;
 		byte_offset += dir->rec_len;
 	}
+	return 0;
 }
 
 // only processes the first 12 blocks (which are the direct and not the indirect blocks)
 int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block, int level, uint32_t block_num) // last two parameters are for the indirect calls
 {
-	
-	
 	uint8_t i = 0;
 	
-	// TODO: Check if need to process the indirect blocks i = 13,14,15?
 	if(level == 0)
 	{
 		for(i = 0; i < 15; i += 1)
@@ -240,20 +263,27 @@ int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block,
 				}
 				if(level == 1)
 				{
-					free(indirect_block);
-					free(block);
-					return printDirectory(fd, parent_inode_num, *block_addr);
+					if( printDirectory(fd, parent_inode_num, *block_addr) != 0)
+					{
+						free(indirect_block);
+						free(block);
+						return 1;
+					}
 				}
 				else
 				{
-					free(indirect_block);
-					free(block);
-					return directory(fd, parent_inode_num, inode_block, level-1, *block_addr);
+					
+					if(directory(fd, parent_inode_num, inode_block, level-1, *block_addr) != 0)
+					{
+						free(indirect_block);
+						free(block);
+						return 1;
+					}
 				}
 			}
 		}
-
-		// TODO: Free pointers
+		free(indirect_block);
+		free(block);
 		
 	}
 	
@@ -265,7 +295,6 @@ int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block,
 int printInodeSummary(int fd, uint32_t first_block_inode)
 {
 	// read data using the struct inode, parse each of those inodes and print it to stdout
-	// TODO: figure out the inode_number somehow
 	uint32_t i;
 	struct ext2_inode* inode_block = malloc(sizeof(struct ext2_inode));
 	for(i = 0; i < inodepergroup; i+= 1)
@@ -283,7 +312,7 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 			char c = filetype(inode_block->i_mode); // get the file types
 			uint16_t low_order_bits = inode_block->i_mode & 0xFFF; // get lower order 16 bits
 
-			// TODO: Check if need to remove 0 for low_order_bits
+			// print out the inode summary
 			printf("INODE,%d,%c,%o,%d,%d,%d,", i+1, c, low_order_bits, inode_block->i_uid, inode_block->i_gid, 
 					inode_block->i_links_count);
 			// print the dates stuff
@@ -308,7 +337,6 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 			// print number of blocks
 			printf("%d", inode_block->i_blocks);
 
-			// TODO: Print out the last 15 fields of the summary
 			uint8_t j = 0;
 			for(j = 0; j < 15; j+= 1)
 			{
@@ -326,6 +354,38 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 					free(inode_block);
 					return 1;
 				}
+			}
+
+			if(c == 'd' || c == 'f')
+			{
+				// file or directory so print the indirect block summaries
+				if(inode_block->i_block[12] != 0)
+				{	
+					if(indirectBlock(fd, i+1, 1, inode_block->i_block[12]) != 0)
+					{
+						free(inode_block);
+						return 1;	
+					}
+				}
+
+				if(inode_block->i_block[13] != 0)
+				{	
+					if(indirectBlock(fd, i+1, 2, inode_block->i_block[13]) != 0)
+					{
+						free(inode_block);
+						return 1;	
+					}
+				}
+
+				if(inode_block->i_block[14] != 0)
+				{	
+					if(indirectBlock(fd, i+1, 3, inode_block->i_block[14]) != 0)
+					{
+						free(inode_block);
+						return 1;	
+					}
+				}
+
 			}
 		}
 
@@ -378,8 +438,8 @@ void groupSummary(int fd)
 		// get information from the group_desc about this group
 		uint16_t num_free_blocks = group_desc->bg_free_blocks_count;
 		uint16_t num_free_inodes = group_desc->bg_free_inodes_count;
-		uint32_t free_block_bitmap = group_desc->bg_block_bitmap; // TODO: Figure out why this works
-		uint32_t free_inode_bitmap = group_desc->bg_inode_bitmap; // TODO: Figure out why this works
+		uint32_t free_block_bitmap = group_desc->bg_block_bitmap; 
+		uint32_t free_inode_bitmap = group_desc->bg_inode_bitmap; 
 		uint32_t first_block_inode = group_desc->bg_inode_table;
 
 
