@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <time.h>
 
 extern int errno;
 
@@ -102,6 +103,190 @@ int printFreeInodes(int fd, uint32_t inode_bitmap, uint32_t group_num)
 	return 0;
 }
 
+char filetype(uint32_t filemode)
+{
+	uint8_t msb_second_byte = (filemode >> 12) & 0xF;
+	if(msb_second_byte == 0xA)
+	{
+		return 's';
+	}
+	else if(msb_second_byte == 0x8)
+	{
+		return 'f';
+	}
+	else if(msb_second_byte == 0x4)
+	{
+		return 'd';
+	}
+	return '?';
+
+}
+
+int indirectBlock(int fd, uint32_t inode_num, uint32_t block_num, int level)
+{
+	void* block = malloc(blocksize);
+	if(pread(fd, block, blocksize, blocksize * block_num) < 0)
+	{
+		free(block);
+		return 1;
+	}
+
+	uint16_t entry_num = 0;
+	uint32_t* iterator_pointer;
+	uint32_t i;
+	for(i = 0; i < blocksize / 4; i += 1)
+	{
+		// go over each of these indexed entries and if entry is non-zero, print to stdout
+		iterator_pointer = block + i * 4;
+		if((*iterator_pointer) != 0)
+		{
+			//printf("Block Num Referenced: %d\n", blocksize/4);
+			printf("Non Zero something found for i=%d\n", i);
+		}
+	}
+
+	free(block);
+	return 0;
+}
+
+int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
+{
+	void* block = malloc(blocksize);
+	if(pread(fd, block, blocksize, blocksize * block_num) < 0)
+	{
+		free(block);
+		return 1;
+	}
+	void* iterator = block;
+	
+	if( *((uint32_t*) iterator) == 0)
+	{
+		return 0; // no data in this block
+	}
+	uint32_t byte_offset = 0; // TODO: Check if this should be moved outside the block
+	while(iterator - block < blocksize - 1) // get number of bytes difference
+	{
+		struct ext2_dir_entry* dir = (struct ext2_dir_entry*) iterator;
+		// read the directory entries
+		if(dir->inode != 0)
+		{
+			printf("DIRENT,%d,%d,%d,%d,%d,%s\n", parent_inode_num, byte_offset, dir->inode, dir->rec_len,dir->name_len, 
+								(char*) dir->name); 
+		}
+		iterator += dir->rec_len;
+		byte_offset += dir->rec_len;
+	}
+}
+
+// only processes the first 12 blocks (which are the direct and not the indirect blocks)
+int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block, int level)
+{
+	
+	void* block = malloc(blocksize);
+	uint8_t i = 0;
+	
+	// TODO: Check if need to process the indirect blocks i = 13,14,15?
+	if(level == 0)
+	{
+		for(i = 0; i < 15; i += 1)
+		{	
+			if(i < 12)
+			{
+				// print info about this block
+				printDirectory(fd, parent_inode_num, inode_block->i_block[i]);
+			}
+			else
+			{
+				// print info about the block it points to
+
+			}
+			
+
+		}
+	}
+	else
+	{
+		// indirect blocks
+	}
+	
+
+	free(block);
+	return 0;
+}
+
+int printInodeSummary(int fd, uint32_t first_block_inode)
+{
+	// read data using the struct inode, parse each of those inodes and print it to stdout
+	// TODO: figure out the inode_number somehow
+	uint32_t i;
+	struct ext2_inode* inode_block = malloc(sizeof(struct ext2_inode));
+	for(i = 0; i < inodepergroup; i+= 1)
+	{
+		if(pread(fd, (void*)inode_block, sizeof(struct ext2_inode), first_block_inode * blocksize + i * sizeof(struct ext2_inode) ) < 0)
+		{
+			free(inode_block);
+			return 1;
+		}
+		if(inode_block->i_mode != 0 && inode_block->i_links_count != 0)
+		{
+
+			// print the INODE summary
+			char buffer[80];
+			char c = filetype(inode_block->i_mode); // get the file types
+			uint16_t low_order_bits = inode_block->i_mode & 0xFFF; // get lower order 16 bits
+
+			// TODO: Check if need to remove 0 for low_order_bits
+			printf("INODE,%d,%c,0%o,%d,%d,%d,", i+1, c, low_order_bits, inode_block->i_uid, inode_block->i_gid, 
+					inode_block->i_links_count);
+			// print the dates stuff
+
+			// TODO: Check if this is correct (using mtime)
+			time_t change_time = inode_block->i_mtime;
+			strftime(buffer, 80, "%D %r", gmtime(&change_time));
+			printf("%s,", buffer);
+
+			// print the last modified time
+			time_t modified_time = inode_block->i_mtime;
+			strftime(buffer, 80, "%D %r", gmtime(&modified_time));
+			printf("%s,", buffer);
+
+			time_t access_time = inode_block->i_atime;
+			strftime(buffer, 80, "%D %r", gmtime(&access_time));
+			printf("%s,", buffer);
+
+			// print file size
+			printf("%d,", inode_block->i_size);
+
+			// print number of blocks
+			printf("%d", inode_block->i_blocks);
+
+			// TODO: Print out the last 15 fields of the summary
+			uint8_t j = 0;
+			for(j = 0; j < 15; j+= 1)
+			{
+				printf(",%d", inode_block->i_block[j]);
+			}
+
+			// Done printing this Inode
+			printf("\n");
+
+			// print out DIRENT
+			if(c == 'd')
+			{
+				if(directory(fd, i+1, inode_block, 0) != 0)
+				{
+					free(inode_block);
+					return 1;
+				}
+			}
+		}
+
+	}
+
+	free(inode_block);
+	return 0;
+}
+
 void groupSummary(int fd)
 {
 	//fprintf(stderr, "%d\n", sizeof(struct ext2_group_desc));
@@ -161,6 +346,11 @@ void groupSummary(int fd)
 		}
 
 		if(printFreeInodes(fd, free_inode_bitmap, i) != 0)
+		{
+			free(group_desc);
+			printErrorAndExit();
+		}
+		if(printInodeSummary(fd, first_block_inode) != 0)
 		{
 			free(group_desc);
 			printErrorAndExit();
