@@ -179,10 +179,10 @@ int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
 }
 
 // only processes the first 12 blocks (which are the direct and not the indirect blocks)
-int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block, int level)
+int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block, int level, uint32_t block_num) // last two parameters are for the indirect calls
 {
 	
-	void* block = malloc(blocksize);
+	
 	uint8_t i = 0;
 	
 	// TODO: Check if need to process the indirect blocks i = 13,14,15?
@@ -198,19 +198,67 @@ int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block,
 			else
 			{
 				// print info about the block it points to
-
+				if( i == 12)
+				{
+					// 1 level of indirect inode
+					directory(fd, parent_inode_num, inode_block, 1, inode_block->i_block[i]);
+				}
+				else if(i == 13)
+				{
+					// 2 levels of indirect inodes
+					directory(fd, parent_inode_num, inode_block, 2, inode_block->i_block[i]);
+				}
+				else if( i == 14)
+				{
+					directory(fd, parent_inode_num, inode_block, 3, inode_block->i_block[i]);
+				}
 			}
-			
-
 		}
 	}
 	else
 	{
 		// indirect blocks
+		void* indirect_block = malloc(blocksize);
+		void* block = malloc(blocksize);
+		if(pread(fd, indirect_block, blocksize, blocksize * block_num) < 0)
+		{
+			free(block);
+			free(indirect_block);
+			return 1;
+		}
+		uint32_t i;
+		for(i = 0; i < blocksize / 4; i += 1)
+		{
+			uint32_t* block_addr = indirect_block + (4 * i);
+			if( *block_addr != 0)
+			{
+				if(pread(fd, block, blocksize, *block_addr * blocksize) < 0)
+				{
+					free(indirect_block);
+					free(block);
+					return 1;
+				}
+				if(level == 1)
+				{
+					free(indirect_block);
+					free(block);
+					return printDirectory(fd, parent_inode_num, *block_addr);
+				}
+				else
+				{
+					free(indirect_block);
+					free(block);
+					return directory(fd, parent_inode_num, inode_block, level-1, *block_addr);
+				}
+			}
+		}
+
+		// TODO: Free pointers
+		
 	}
 	
 
-	free(block);
+	
 	return 0;
 }
 
@@ -236,12 +284,12 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 			uint16_t low_order_bits = inode_block->i_mode & 0xFFF; // get lower order 16 bits
 
 			// TODO: Check if need to remove 0 for low_order_bits
-			printf("INODE,%d,%c,0%o,%d,%d,%d,", i+1, c, low_order_bits, inode_block->i_uid, inode_block->i_gid, 
+			printf("INODE,%d,%c,%o,%d,%d,%d,", i+1, c, low_order_bits, inode_block->i_uid, inode_block->i_gid, 
 					inode_block->i_links_count);
 			// print the dates stuff
 
-			// TODO: Check if this is correct (using mtime)
-			time_t change_time = inode_block->i_mtime;
+			// Updated spec use creation time
+			time_t change_time = inode_block->i_ctime;
 			strftime(buffer, 80, "%D %r", gmtime(&change_time));
 			printf("%s,", buffer);
 
@@ -273,7 +321,7 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 			// print out DIRENT
 			if(c == 'd')
 			{
-				if(directory(fd, i+1, inode_block, 0) != 0)
+				if(directory(fd, i+1, inode_block, 0, 0) != 0)
 				{
 					free(inode_block);
 					return 1;
