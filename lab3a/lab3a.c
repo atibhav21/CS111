@@ -139,28 +139,29 @@ int indirectBlock(int fd, uint32_t inode_num, int level, uint32_t block_num)
 	}
 
 	uint16_t entry_num = 0;
-	void* ptr4;
+	uint32_t* ptr4;
 	uint16_t i;
 
 	for( i = 0; i < blocksize / 4; i += 1)
 	{
 		ptr4 = block + (4 * i);
-		if(*((uint32_t*)ptr4) != 0)
+		if(*ptr4 != 0)
 		{
-			printf("INDIRECT,%d,%d,%d,%d,%d\n", inode_num, level, -1, block_num, *((uint32_t*)ptr4)); // TODO: Change the -1
+			printf("INDIRECT,%d,%d,%d,%d,%d\n", inode_num, level, -1, block_num, *ptr4); // TODO: Figure out logical block offset
+
 		}
 		entry_num += 1;
 	}
 
-	if(level > 0)
+	if(level > 1)
 	{
 		// recurse!!!!
 		for( i = 0; i < blocksize / 4; i += 1)
 		{
 			ptr4 = block + (4 * i);
-			if(*((uint32_t*)ptr4) != 0)
+			if(*(ptr4) != 0)
 			{
-				if(indirectBlock(fd, inode_num, level-1, *((uint32_t*)ptr4)) != 0)
+				if(indirectBlock(fd, inode_num, level-1, *ptr4) != 0)
 				{
 					free(block);
 					return 1;
