@@ -1,3 +1,7 @@
+// NAME: Atibhav Mittal
+// EMAIL: atibhav.mittal6@gmail.com
+// ID: 804598987
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -18,8 +22,6 @@ uint32_t blockpergroup = 0;
 uint32_t numofgroup = 0; 
 uint32_t inodepergroup = 0;
 uint16_t inode_size = 0;
-
-
 
 void printUsage()
 {
@@ -129,7 +131,8 @@ char filetype(uint32_t filemode)
 // level of indirection for the block being scanned
 // 
 // block number of the indirect block being scanned
-int indirectBlock(int fd, uint32_t inode_num, int level, uint32_t block_num)
+// TODO: add a entry number parameter for recursion
+int indirectBlock(int fd, uint32_t inode_num, int level, uint32_t block_num, int initial_offset)
 {
 	void* block = malloc(blocksize);
 	if(pread(fd, block, blocksize, blocksize * block_num) < 0)
@@ -142,16 +145,24 @@ int indirectBlock(int fd, uint32_t inode_num, int level, uint32_t block_num)
 	uint32_t* ptr4;
 	uint16_t i;
 
+	int multiplier = 1;
+
+	for(i = 1; i < level; i += 1)
+	{
+		multiplier = multiplier * (blocksize / 4);
+	}
+
 	for( i = 0; i < blocksize / 4; i += 1)
 	{
 		ptr4 = block + (4 * i);
 		if(*ptr4 != 0)
 		{
-			printf("INDIRECT,%d,%d,%d,%d,%d\n", inode_num, level, -1, block_num, *ptr4); // TODO: Figure out logical block offset
+			printf("INDIRECT,%d,%d,%d,%d,%d\n", inode_num, level, initial_offset + entry_num, block_num, *ptr4); // TODO: Figure out logical block offset
 
 		}
 		entry_num += 1;
 	}
+
 
 	if(level > 1)
 	{
@@ -161,7 +172,7 @@ int indirectBlock(int fd, uint32_t inode_num, int level, uint32_t block_num)
 			ptr4 = block + (4 * i);
 			if(*(ptr4) != 0)
 			{
-				if(indirectBlock(fd, inode_num, level-1, *ptr4) != 0)
+				if(indirectBlock(fd, inode_num, level-1, *ptr4, initial_offset + i * multiplier) != 0)
 				{
 					free(block);
 					return 1;
@@ -196,7 +207,7 @@ int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
 		// read the directory entries
 		if(dir->inode != 0)
 		{
-			printf("DIRENT,%d,%d,%d,%d,%d,%s\n", parent_inode_num, byte_offset, dir->inode, dir->rec_len,dir->name_len, 
+			printf("DIRENT,%d,%d,%d,%d,%d,'%s'\n", parent_inode_num, byte_offset, dir->inode, dir->rec_len,dir->name_len, 
 								(char*) dir->name); 
 		}
 		iterator += dir->rec_len;
@@ -320,16 +331,16 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 
 			// Updated spec use creation time
 			time_t change_time = inode_block->i_ctime;
-			strftime(buffer, 80, "%D %r", gmtime(&change_time));
+			strftime(buffer, 80, "%D %T", gmtime(&change_time)); // TODO: Need to change to 24 hour clock
 			printf("%s,", buffer);
 
 			// print the last modified time
 			time_t modified_time = inode_block->i_mtime;
-			strftime(buffer, 80, "%D %r", gmtime(&modified_time));
+			strftime(buffer, 80, "%D %T", gmtime(&modified_time));
 			printf("%s,", buffer);
 
 			time_t access_time = inode_block->i_atime;
-			strftime(buffer, 80, "%D %r", gmtime(&access_time));
+			strftime(buffer, 80, "%D %T", gmtime(&access_time));
 			printf("%s,", buffer);
 
 			// print file size
@@ -362,7 +373,7 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 				// file or directory so print the indirect block summaries
 				if(inode_block->i_block[12] != 0)
 				{	
-					if(indirectBlock(fd, i+1, 1, inode_block->i_block[12]) != 0)
+					if(indirectBlock(fd, i+1, 1, inode_block->i_block[12], 12) != 0)
 					{
 						free(inode_block);
 						return 1;	
@@ -371,7 +382,7 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 
 				if(inode_block->i_block[13] != 0)
 				{	
-					if(indirectBlock(fd, i+1, 2, inode_block->i_block[13]) != 0)
+					if(indirectBlock(fd, i+1, 2, inode_block->i_block[13], 12 + blocksize/4) != 0)
 					{
 						free(inode_block);
 						return 1;	
@@ -380,7 +391,7 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 
 				if(inode_block->i_block[14] != 0)
 				{	
-					if(indirectBlock(fd, i+1, 3, inode_block->i_block[14]) != 0)
+					if(indirectBlock(fd, i+1, 3, inode_block->i_block[14], 12 + blocksize/4 + (blocksize/4)*(blocksize/4)) != 0)
 					{
 						free(inode_block);
 						return 1;	
