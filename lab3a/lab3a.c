@@ -205,8 +205,10 @@ int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
 	{
 		struct ext2_dir_entry* dir = (struct ext2_dir_entry*) iterator;
 		// read the directory entries
+
 		if(dir->inode != 0)
 		{
+			dir->name[dir->name_len] = '\0';
 			printf("DIRENT,%d,%d,%d,%d,%d,'%s'\n", parent_inode_num, byte_offset, dir->inode, dir->rec_len,dir->name_len, 
 								(char*) dir->name); 
 		}

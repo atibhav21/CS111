@@ -1,3 +1,13 @@
 NAME: Atibhav Mittal
 EMAIL: atibhav.mittal6@gmail.com
 ID: 804598987
+
+The tarball consists of the following files:
+
+ext2_fs.h - Header file for the structs used to work with the ext2 file system
+lab3a.c - Source code that prints out the summary of the given image according
+		to the project spec
+
+Makefile - GNU make Makefile that supports the default target, clean and dist
+
+README - Information about the tarball
