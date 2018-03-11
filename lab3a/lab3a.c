@@ -186,7 +186,7 @@ int indirectBlock(int fd, uint32_t inode_num, int level, uint32_t block_num, int
 	return 0;
 }
 
-int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
+int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num, uint32_t* byte_offset)
 {
 	void* block = malloc(blocksize);
 	if(pread(fd, block, blocksize, blocksize * block_num) < 0)
@@ -200,7 +200,7 @@ int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
 	{
 		return 0; // no data in this block
 	}
-	uint32_t byte_offset = 0; // TODO: Check if this should be moved outside the block
+	//uint32_t byte_offset = 0; // TODO: Check if this should be moved outside the block
 	while(iterator - block < blocksize - 1) // get number of bytes difference
 	{
 		struct ext2_dir_entry* dir = (struct ext2_dir_entry*) iterator;
@@ -209,20 +209,20 @@ int printDirectory(int fd, uint32_t parent_inode_num, uint32_t block_num)
 		if(dir->inode != 0)
 		{
 			dir->name[dir->name_len] = '\0';
-			printf("DIRENT,%d,%d,%d,%d,%d,'%s'\n", parent_inode_num, byte_offset, dir->inode, dir->rec_len,dir->name_len, 
+			printf("DIRENT,%d,%d,%d,%d,%d,'%s'\n", parent_inode_num, *byte_offset, dir->inode, dir->rec_len,dir->name_len, 
 								(char*) dir->name); 
 		}
 		iterator += dir->rec_len;
-		byte_offset += dir->rec_len;
+		*byte_offset += dir->rec_len;
 	}
 	return 0;
 }
 
 // only processes the first 12 blocks (which are the direct and not the indirect blocks)
-int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block, int level, uint32_t block_num) // last two parameters are for the indirect calls
+int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block, int level, uint32_t block_num, uint32_t* byte_offset) // last two parameters are for the indirect calls
 {
 	uint8_t i = 0;
-	
+	//uint32_t byte_offset = 0; // byte offset for each directory
 	if(level == 0)
 	{
 		for(i = 0; i < 15; i += 1)
@@ -230,7 +230,7 @@ int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block,
 			if(i < 12)
 			{
 				// print info about this block
-				printDirectory(fd, parent_inode_num, inode_block->i_block[i]);
+				printDirectory(fd, parent_inode_num, inode_block->i_block[i], byte_offset);
 			}
 			else
 			{
@@ -238,16 +238,16 @@ int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block,
 				if( i == 12)
 				{
 					// 1 level of indirect inode
-					directory(fd, parent_inode_num, inode_block, 1, inode_block->i_block[i]);
+					directory(fd, parent_inode_num, inode_block, 1, inode_block->i_block[i], byte_offset);
 				}
 				else if(i == 13)
 				{
 					// 2 levels of indirect inodes
-					directory(fd, parent_inode_num, inode_block, 2, inode_block->i_block[i]);
+					directory(fd, parent_inode_num, inode_block, 2, inode_block->i_block[i], byte_offset);
 				}
 				else if( i == 14)
 				{
-					directory(fd, parent_inode_num, inode_block, 3, inode_block->i_block[i]);
+					directory(fd, parent_inode_num, inode_block, 3, inode_block->i_block[i], byte_offset);
 				}
 			}
 		}
@@ -277,7 +277,7 @@ int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block,
 				}
 				if(level == 1)
 				{
-					if( printDirectory(fd, parent_inode_num, *block_addr) != 0)
+					if( printDirectory(fd, parent_inode_num, *block_addr, byte_offset) != 0)
 					{
 						free(indirect_block);
 						free(block);
@@ -287,13 +287,23 @@ int directory(int fd, uint32_t parent_inode_num, struct ext2_inode* inode_block,
 				else
 				{
 					
-					if(directory(fd, parent_inode_num, inode_block, level-1, *block_addr) != 0)
+					if(directory(fd, parent_inode_num, inode_block, level-1, *block_addr, byte_offset) != 0)
 					{
 						free(indirect_block);
 						free(block);
 						return 1;
 					}
 				}
+			}
+			else
+			{
+				int j;
+				uint32_t multiplier = 1;
+				for(j = 0; j < level; j+= 1)
+				{
+					multiplier = multiplier * blocksize/4;
+				}
+				byte_offset += multiplier;
 			}
 		}
 		free(indirect_block);
@@ -363,7 +373,8 @@ int printInodeSummary(int fd, uint32_t first_block_inode)
 			// print out DIRENT
 			if(c == 'd')
 			{
-				if(directory(fd, i+1, inode_block, 0, 0) != 0)
+				uint32_t byte_offset = 0;
+				if(directory(fd, i+1, inode_block, 0, 0, &byte_offset) != 0)
 				{
 					free(inode_block);
 					return 1;
