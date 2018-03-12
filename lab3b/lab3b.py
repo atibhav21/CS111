@@ -13,6 +13,8 @@ freeInodesList = {}
 allocatedBlocksList = {}
 allocatedInodesList = {}
 actualReferences = {}
+dirents = {}
+invalidParentChildDirents = {}
 
 total_blocks = 0
 total_inodes = 0
@@ -70,10 +72,30 @@ def parseInode(row):
 			allocatedBlocksList[int(row[26])] = [('TRIPLE INDIRECT BLOCK', row[1], '65804')]
 
 def parseDirent(row):
+
+
 	if(int(row[3]) in actualReferences.keys()):
 		actualReferences[int(row[3])] += 1
 	else:
 		actualReferences[int(row[3])] = 1
+	
+	dirents[int(row[3])] = (row[1], row[6])
+
+	if(row[6] == '\'.\''):
+		# Reference to itself
+		if(row[3] != row[1]):
+			if(int(row[3]) in invalidParentChildDirents.keys()):
+				invalidParentChildDirents[int(row[3])].append((row[1], row[6], row[3], row[1]))
+			else:
+				invalidParentChildDirents[int(row[3])] = [(row[1], row[6], row[3], row[1])]
+
+	if(row[6] == '\'..\''):
+		
+		if(row[3] != row[1]):
+			if(int(row[3])) in invalidParentChildDirents.keys():
+				invalidParentChildDirents[int(row[3])].append((row[1], row[6], row[3], row[1]))
+			else:
+				invalidParentChildDirents[int(row[3])] = [(row[1], row[6], row[3], row[1])]
 
 
 def returnTupleOfIndirect(row):
@@ -174,6 +196,20 @@ def main():
 						print('INODE %d HAS 0 LINKS BUT LINKCOUNT IS %d' % (key, allocatedInodesList[key]))
 					elif not allocatedInodesList[key] == actualReferences[key]:
 						print('INODE %d HAS %d LINKS BUT LINKCOUNT IS %d' % (key, actualReferences[key], allocatedInodesList[key]))
+
+
+			for key in dirents.keys():
+				value = dirents[key]
+				if key > total_inodes or key < 1:
+					print("DIRECTORY INODE %s NAME %s INVALID INODE %d" %(value[0],value[1],key))
+					continue
+
+				if not key in allocatedInodesList.keys():
+					print("DIRECTORY INODE %s NAME %s UNALLOCATED INODE %d" %(value[0],value[1],key))
+
+			for key in invalidParentChildDirents.keys():
+				for value in  invalidParentChildDirents[key]:
+					print('DIRECTORY INODE %s NAME %s LINK TO INODE %s SHOULD BE %s' % (value[0], value[1], value[2], value[3]))
 
 	except IOError as e:
 		print("Couldn't open file: %s" %e, file=sys.stderr)
