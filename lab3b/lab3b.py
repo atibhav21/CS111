@@ -89,6 +89,8 @@ def parseDirent(row):
 			else:
 				invalidParentChildDirents[int(row[3])] = [(row[1], row[6], row[3], row[1])]
 
+
+	# TODO: Figure out how to get incorrect Parent Entries
 	if(row[6] == '\'..\''):
 		
 		if(row[3] != row[1]):

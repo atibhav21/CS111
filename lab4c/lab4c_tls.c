@@ -12,10 +12,19 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/errno.h>
-#include <sys/socket.h>
 #include <time.h>
 #include <sys/time.h> 
 #include <ctype.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+
+#include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 
 #include <mraa.h>
 #include <mraa/aio.h>
@@ -35,7 +44,7 @@ extern int optind;
 
 int period = 1;
 char scale = 'F';
-int shutdown = 0;
+int shutdown_temp = 0;
 int reports_enabled = 1;
 
 int logfile_fd = 0;
@@ -48,7 +57,7 @@ char buffered_string[1024];
 int buffered_string_counter = 0;
 
 unsigned int id = 0;
-char* host[80];
+char host[80];
 int port_num = 0;
 
 void exitError()
@@ -106,7 +115,7 @@ void processCommand()
 				exitError();
 			}
 		}
-		shutdown = 1;
+		shutdown_temp = 1;
 	}
 	else if(strcmp(buffered_string, "START") == 0)
 	{
@@ -245,25 +254,23 @@ void setUpSocket(int* sockfd)
 	*sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if(*sockfd < 0)
 	{
-		//printErrorAndReset(strcat("Error while setting up socket: ", strerror(errno)));
 		exitError();
 	}
 	server = gethostbyname(host);
 	if(server == NULL)
 	{
 		exitError();
-		//printErrorAndReset("Could not connect to localhost");
 	}
 	memset((char *)& serv_addr, 0, sizeof(serv_addr));
 	serv_addr.sin_family = AF_INET;
-	memcpy((char *) server->h_addr, (char*)&serv_addr.sin_addr.s_addr, server->h_length);
+	memcpy((char*)&serv_addr.sin_addr.s_addr, (char *) server->h_addr, server->h_length);
 
 	serv_addr.sin_port = htons(port_num);
 
 	
 	if(connect(*sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) 
 	{
-		printErrorAndReset(strcat("Error connecting to server: ", strerror(errno)));
+		exitError();
 	}
 
 
@@ -292,7 +299,9 @@ int main(int argc, char *argv[])
 	time_t next_report_due = 0;
 	struct pollfd stdin_poll;
 
-	int sock_fd;
+	int sockfd;
+	SSL* ssl = NULL;
+	SSL_CTX* ctx = NULL;
 
 	// TODO: Check if all the mandatory arguments are passed in
 	int log_provided = FALSE, host_provided = FALSE, id_provided = FALSE, port_provided = FALSE;
@@ -353,12 +362,53 @@ int main(int argc, char *argv[])
 	//button = mraa_gpio_init(GPIO_BUTTON);
 	//mraa_gpio_dir(button, MRAA_GPIO_IN);
 
+	
+	// Set up the SSL connection
+	const SSL_METHOD* method;
+
+	OpenSSL_add_all_algorithms();
+	ERR_load_BIO_strings();
+	ERR_load_crypto_strings();
+	SSL_load_error_strings();
+
+	//certbio = BIO_new(BIO_s_file());
+
+	if(SSL_library_init() < 0)
+	{
+		fprintf(stderr, "Could Not initialize the OpenSSL library\n");
+		exit(2);
+	}
+
+	method = SSLv23_client_method();
+
+	if((ctx = SSL_CTX_new(method)) == NULL)
+	{
+		fprintf(stderr, "Could not create a new SSL context structure.\n");
+		exit(2);
+	}
+
+	ssl = SSL_new(ctx);
+
 	setUpSocket(&sockfd);
 
-		// log the ID to the server
-	char[20] id_message;
-	snprintf(id_message, 20, "ID:%d\n", id);
-	if(write(sockfd, id_message, strlen(id_message)) < 0)
+	SSL_set_fd(ssl, sockfd);
+
+	if(SSL_connect(ssl) != 1)
+	{
+		fprintf(stderr, "Could not build a SSL session\n");
+		exit(2);
+	}
+
+	// log the ID to the server
+	char id_message[20];
+	snprintf(id_message, 20, "ID=%d\n", id);
+
+	if(SSL_write(ssl, id_message, strlen(id_message)) < 0)
+	{
+		exitError();
+	}
+
+	if(write(logfile_fd, id_message, strlen(id_message)) < 0)
 	{
 		exitError();
 	}
@@ -369,7 +419,7 @@ int main(int argc, char *argv[])
 
 	int poll_result;
 
-	while(! shutdown)
+	while(! shutdown_temp)
 	{
 		poll_result = poll(&stdin_poll, 1, 0);
 
@@ -379,7 +429,7 @@ int main(int argc, char *argv[])
 			float temperature = readTemp();
 			snprintf(stdout_buffer, sizeof(stdout_buffer), "%02d:%02d:%02d %.1f\n", now->tm_hour, now->tm_min, now->tm_sec, temperature);
 
-			write(sockfd, stdout_buffer, strlen(stdout_buffer));
+			SSL_write(ssl, stdout_buffer, strlen(stdout_buffer));
 			if(logging_enabled){
 				write(logfile_fd, stdout_buffer, strlen(stdout_buffer));
 			}
@@ -391,7 +441,7 @@ int main(int argc, char *argv[])
 			if(stdin_poll.revents & POLLIN)
 			{
 				// process the user input
-				int num_read = read(sockfd, read_buffer, 128);
+				int num_read = SSL_read(ssl, read_buffer, 128);
 				if(num_read < 0)
 				{
 					exitError();
@@ -422,13 +472,17 @@ int main(int argc, char *argv[])
 	// log the shutdown message
 	now = localtime(&(clock.tv_sec));
 	snprintf(stdout_buffer, sizeof(stdout_buffer), "%02d:%02d:%02d SHUTDOWN\n", now->tm_hour, now->tm_min, now->tm_sec);
-	write(sockfd, stdout_buffer, strlen(stdout_buffer));
+	SSL_write(ssl, stdout_buffer, strlen(stdout_buffer));
 	if(logging_enabled){
 		write(logfile_fd, stdout_buffer, strlen(stdout_buffer));
 	}
 
 	mraa_aio_close(tempSensor);
 	//mraa_gpio_close(button);
+
+	SSL_free(ssl);
+  	//X509_free(cert);
+  	SSL_CTX_free(ctx);
 
 	exit(0);
 }

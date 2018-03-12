@@ -1,0 +1,10 @@
+NAME: Atibhav Mittal
+EMAIL: atibhav.mittal6@gmail.com
+ID: 804598987
+
+The tarball contains the following files:
+
+lab4c_tcp.c: Source code for module that connects to the server and sends temperature and receives command via a TCP connection
+lab4c_tls.c: Source code for module that connects to the server and sends temperature and receives command via a TLS connection
+README: Information about the tarball
+Makefile: GNU make that supports the targets default, dist, and clean
