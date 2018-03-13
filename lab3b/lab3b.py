@@ -15,6 +15,8 @@ allocatedInodesList = {}
 actualReferences = {}
 dirents = {}
 invalidParentChildDirents = {}
+parentDir = {}
+childDir = {}
 
 total_blocks = 0
 total_inodes = 0
@@ -40,7 +42,7 @@ def parseSuperBlock(row):
 
 def parseInode(row):
 	if int(row[1]) in allocatedInodesList.keys():
-		print('DUPLICATE INODE CREATED ERROR!!!')
+		print('DUPLICATE INODE NUMBER ERROR!!!')
 		sys.exit(1)
 	else:
 		allocatedInodesList[int(row[1])] = int(row[6])
@@ -90,14 +92,35 @@ def parseDirent(row):
 				invalidParentChildDirents[int(row[3])] = [(row[1], row[6], row[3], row[1])]
 
 
-	# TODO: Figure out how to get incorrect Parent Entries
+	'''# TODO: Figure out how to get incorrect Parent Entries
 	if(row[6] == '\'..\''):
 		
 		if(row[3] != row[1]):
 			if(int(row[3])) in invalidParentChildDirents.keys():
 				invalidParentChildDirents[int(row[3])].append((row[1], row[6], row[3], row[1]))
 			else:
-				invalidParentChildDirents[int(row[3])] = [(row[1], row[6], row[3], row[1])]
+				invalidParentChildDirents[int(row[3])] = [(row[1], row[6], row[3], row[1])]'''
+
+	if(row[6] == '\'..\''):
+		# add to parent dir
+		if not int(row[1]) in parentDir.keys():
+			parentDir[int(row[1])] = int(row[3]) # That's what the .. entry is saying is its parents inode num
+	elif not row[6] == '\'.\'' :
+		# add to child dir
+		if int(row[3]) in childDir.keys():
+			childDir[int(row[3])].append(int(row[1]))
+		else:
+			childDir[int(row[3])] = [int(row[1])]
+
+def createParentInvalidEntries():
+	for key in parentDir.keys():
+		if not key in childDir.keys() or not parentDir[key] in childDir[key]:
+			# Found an anomaly
+			if key == 2:
+				# Special Case for Root Directory
+				invalidParentChildDirents[key] = [(key, '\'..\'', parentDir[key], 2)]
+			else:
+				invalidParentChildDirents[key] = [(key, '\'..\'', parentDir[key], childDir[key])]
 
 
 def returnTupleOfIndirect(row):
@@ -127,7 +150,7 @@ def main():
 				if(row[0] == 'SUPERBLOCK'):
 					parseSuperBlock(row)
 				elif(row[0] == 'GROUP'):
-					continue # TODO: Check if need to do anything for GROUP
+					continue 
 				elif(row[0] == 'BFREE'):
 					if int(row[1]) in freeBlocksList.keys():
 						freeBlocksList[int(row[1])] += 1
@@ -208,6 +231,9 @@ def main():
 
 				if not key in allocatedInodesList.keys():
 					print("DIRECTORY INODE %s NAME %s UNALLOCATED INODE %d" %(value[0],value[1],key))
+
+			childDir[2] = [2] # Special Case since root directory should be a child of itself
+			createParentInvalidEntries()
 
 			for key in invalidParentChildDirents.keys():
 				for value in  invalidParentChildDirents[key]:
